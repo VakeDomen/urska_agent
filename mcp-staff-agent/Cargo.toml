@@ -1,5 +1,5 @@
 [package]
-name = "mcp-test"
+name = "mcp-staff-agent"
 version = "0.1.0"
 edition = "2024"
 
