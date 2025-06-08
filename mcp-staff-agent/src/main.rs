@@ -256,11 +256,6 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
 
 
 
-    println!("{:#?}", agent);
-    
-        
-    
-
     let ct = SseServer::serve(BIND_ADDRESS.parse()?)
         .await?
         .with_service(move || Service::new(agent.clone()));
@@ -269,11 +264,6 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
     ct.cancel();
 
     Ok(())
-
-   
-    // println!("{:#?}", tool_result);
-
-    // Ok(())
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -304,10 +294,7 @@ impl Service {
         agent.clear_history();
 
         let resp = agent.invoke(question.question).await;
-        println!("{:#?}", agent);
-
-        let memory_resp = agent.invoke("Is there any memory you would like to store?").await;
-        println!("{:#?}", memory_resp.unwrap().content);
+        let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
 
         Ok(CallToolResult::success(vec![Content::text(
             resp.unwrap().content.unwrap()
