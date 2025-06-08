@@ -121,7 +121,9 @@ impl MemoryMcpService {
         // 2. Search Qdrant
         let search_results = self.state.qdrant.search_memories(query_embedding, params.top_k).await
             .map_err(|e| rmcp::Error::internal_error(format!("Qdrant search error: {}", e.to_string()), None))?;  
-        
+        let search_results = search_results.iter()
+            .map(|r| r.text.clone())
+            .collect::<Vec<String>>();
         let response = QueryMemoryResponse { results: search_results };
         let response_json = serde_json::to_value(response)
             .map_err(|e| rmcp::Error::internal_error(format!("Serealization error: {}", e.to_string()), None))?;  

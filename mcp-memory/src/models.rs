@@ -58,5 +58,5 @@ pub struct QueryResultItem {
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct QueryMemoryResponse {
-    pub results: Vec<QueryResultItem>,
+    pub results: Vec<String>,
 }

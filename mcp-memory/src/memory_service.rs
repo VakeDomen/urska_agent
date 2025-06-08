@@ -135,6 +135,7 @@ impl Service for MemoryService {
                                         metadata: metadata_val,
                                     });
                                 }
+                                let results = results.iter().map(|r| r.text).collect();
                                 let response = QueryMemoryResponse { results };
                                 tx.send(StreamItem::ok(request.id, serde_json::to_value(response)?)).await?;
                             }
