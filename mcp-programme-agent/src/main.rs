@@ -10,7 +10,7 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
-use crate::{programme::ProgrammeInfo, util::rank_names};
+use crate::{programme::{ProgrammeInfo}, util::rank_names};
 
 mod programme;
 mod util;
@@ -18,10 +18,8 @@ mod util;
 const BIND_ADDRESS: &str = "127.0.0.1:8003";
 const BASE_URL: &str = "https://www.famnit.upr.si";
 
-// --- Phase 2: Data Structure Redesign ---
-
 #[derive(Debug, Clone, PartialEq)]
-pub enum ProgrammeLevel {
+enum ProgrammeLevel {
     Undergraduate,
     Master,
     Doctoral,
@@ -29,7 +27,6 @@ pub enum ProgrammeLevel {
 
 impl fmt::Display for ProgrammeLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Pretty-print for display purposes
         match self {
             ProgrammeLevel::Undergraduate => write!(f, "Undergraduate"),
             ProgrammeLevel::Master => write!(f, "Master's"),
@@ -39,7 +36,7 @@ impl fmt::Display for ProgrammeLevel {
 }
 
 #[derive(Debug, Clone)]
-pub struct Programme {
+struct Programme {
     name: String,
     url: String,
     level: ProgrammeLevel,
@@ -49,7 +46,6 @@ pub struct Programme {
 #[tokio::main]
 async fn main() -> Result<()> {
     init_default_tracing();
-    // --- Phase 5: Updated System Prompt ---
     let agent_system_prompt = r#"
 You are **UniProgramme-Agent**, a focused assistant that answers questions about the study programmes offered at *famnit.upr.si*. You build up a factual **long-term memory** about these programmes.
 
@@ -64,49 +60,48 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
 • After every tool call, **reflect** on your progress and update the plan if necessary.
 
 ────────────────────────────────────────────────────────
-3 MEMORY-FIRST POLICY  
-• **Always start** with `query_memory({ "query_text": "<original user message>", "top_k": 5 })`.
-• Use retrieved memories to answer directly or to inform your plan.
+3 MEMORY-FIRST, BUT VERIFY
+• **Always start** with `query_memory`. Use retrieved memories to inform your plan.
+• **Crucial Principle:** Your memory is a helpful starting point, but it can be incomplete. The tools are the source of truth.
+• If the user asks for a list or a count of items (e.g., "list all courses", "how many requirements"), and you find a relevant memory, you **must still use a tool to fetch the complete, definitive list** before answering.
 
 ────────────────────────────────────────────────────────
 4 AMBIGUITY & CLARIFICATION
 • If the user asks for a programme like "Computer Science" without specifying a level, you MUST check for ambiguity.
 • The `get_programme_info` tool will help you by returning a clarification message if multiple levels are found.
-• When you receive such a message, your next step is to **ask the user a clarifying question** (e.g., "Do you mean the Undergraduate, Master's, or Doctoral programme?").
-• Do not try to guess the level.
+• When you receive such a message, your next step is to **ask the user a clarifying question**. Do not try to guess the level.
 
 ────────────────────────────────────────────────────────
 5 TOOLS – WHEN & HOW
 
 → **query_memory** – Always the first call.
 
-→ **list_all_programmes** – Use when the user wants a list of programmes.
-  • Example: User says "list all master's programmes" → `list_all_programmes({ "level": "master" })`
-  • If no level is specified, it will list all programmes grouped by level.
+→ **list_all_programmes** – Use when the user wants a general list of programmes.
 
-→ **get_similar_programme_names** - Use to find programme names when the user's query is misspelled or a partial match. Can be filtered by level.
+→ **get_similar_programme_names** - Use to find programme names when the user's query is misspelled or a partial match.
 
-→ **get_programme_info** – Use ONLY when you know the programme's **exact name AND level**.
-  • If the level is known (e.g., "undergraduate computer science"), call the tool with the level parameter: `{ "name": "Computer Science", "level": "undergraduate" }`
-  • If the level is unknown, and the name could be ambiguous, call it without the level to check for ambiguity. The tool will tell you if you need to ask for clarification.
+→ **get_programme_info** – Use to get definitive information about a programme.
+  • **BE EFFICIENT:** Use the `sections` parameter to request **only the information you need.**
+  • Example (User asks for admission requirements): `{ "name": "...", "level": "...", "sections": ["admission_requirements"] }`
+  • Example (User asks for a list of courses): `{ "name": "...", "level": "...", "sections": ["course_tables"] }`
+  • **Valid section names are**: `general_info`, `coordinators`, `about`, `goals`, `course_structure`, `field_work`, `course_tables`, `admission_requirements`, `transfer_criteria`, `advancement_requirements`, `completion_requirements`, `competencies`, `employment_opportunities`.
 
-→ **store_memory** – Call this whenever a tool presents new, factual information that could be useful later. Store facts with their level.
-  • Example fact: "The Master's programme in Data Science is taught in English."
+→ **store_memory** – Call this to save new or corrected information.
+  • **IMPORTANT: Before storing, check if the fact already exists in memory. DO NOT add duplicate information.**
+  • If a tool call revealed that a memory was incomplete or incorrect, use this to save the updated fact.
   • Call **before** sending the final answer.
-  • Do not store same information again.
 
 ────────────────────────────────────────────────────────
 6 WORKFLOW (after initial memory check)
 
 1.  Produce a plan.
-2.  If the user asks for a list, use `list_all_programmes`.
-3.  If the user asks for details about a specific programme:
-    a. Determine the programme name and, if possible, the level from the query.
-    b. Call `get_programme_info`.
+2.  If the user asks for a general list of programmes, use `list_all_programmes`.
+3.  If the user asks for specific details about a programme (especially a list or a count of items):
+    a. Determine the programme name, level, and the specific sections needed.
+    b. **Even if memory has a partial answer, call `get_programme_info` with the correct `sections` to get the complete and authoritative information.**
     c. If the tool returns an ambiguity message, update your plan to ask the user for clarification.
-    d. If the tool returns the full programme details, extract the requested information.
-4.  Store any NEW, important facts (like duration, ECTS, coordinators) using `store_memory`.
-    Avoid duplicating the data in memories.
+    d. Once you have the definitive information from the tool, compare it to your memory. Formulate your final answer using the **complete information from the tool output.**
+4.  **Before storing new facts with `store_memory`, review your initial `query_memory` results to ensure you are not adding duplicate data.** If your tool call corrected an incomplete memory, you should store the new, complete fact.
 5.  When all information is gathered and stored, wrap the final answer in `<final> … </final>`.
 
 ────────────────────────────────────────────────────────
@@ -115,11 +110,10 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
 • Provide full lists when listing items, never just partial information.
 • For unknown values, use "—".
 • Always specify the programme level in your answer (e.g., "The undergraduate programme in Mathematics...").
-• Do not use 'etc.', but write the whole answer
-• If you refer the user to external resource, always provide a link to the resource.
-    "#;
+• Do not use 'etc.', but write the whole answer.
+• If you refer the user to an external resource, always provide a link to the resource.
+"#;
 
-    // --- Phase 3: Startup Data Fetching & Parsing ---
     let programme_sources = vec![
         ("https://www.famnit.upr.si/en/education/undergraduate", ProgrammeLevel::Undergraduate),
         ("https://www.famnit.upr.si/en/education/master", ProgrammeLevel::Master),
@@ -137,9 +131,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         }
     }
     
-    // --- Phase 4: Tool Modification and Creation ---
-    
-    // New Tool: list_all_programmes
     let all_programmes_clone_for_list = all_programmes.clone();
     let list_programmes_executor: AsyncToolFn = Arc::new(move |args: Value| {
         let programmes_list = all_programmes_clone_for_list.clone();
@@ -177,7 +168,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         .executor(list_programmes_executor)
         .build()?;
 
-    // Modified Tool: get_similar_programme_names
     let all_programmes_clone_for_similar = all_programmes.clone();
     let similar_programmes_executor: AsyncToolFn = Arc::new(move |args: Value| {
         let programmes_list = all_programmes_clone_for_similar.clone();
@@ -216,8 +206,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         .executor(similar_programmes_executor)
         .build()?;
 
-
-    // Modified Tool: get_programme_info (with ambiguity handling)
     let all_programmes_clone_for_info = all_programmes.clone();
     let programme_info_executor: AsyncToolFn = Arc::new(move |args: Value| {
         let programmes_list = all_programmes_clone_for_info.clone();
@@ -225,7 +213,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
             let query_name = args.get("name").and_then(|v| v.as_str()).ok_or_else(|| ToolExecutionError::ArgumentParsingError("Missing 'name' argument".into()))?;
             let level_filter = args.get("level").and_then(|v| v.as_str());
 
-            // --- Find the best matching programme name ---
             let all_names: Vec<String> = programmes_list.iter().map(|p| p.name.clone()).collect();
             let top_ranked_names = rank_names(all_names, query_name);
             let best_match_name = match top_ranked_names.first() {
@@ -233,7 +220,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
                 None => return Ok(format!("No programme found matching the name '{}'.", query_name)),
             };
 
-            // --- Filter matches by name and optionally by level ---
             let mut potential_matches: Vec<Programme> = programmes_list
                 .into_iter()
                 .filter(|p| p.name.eq_ignore_ascii_case(best_match_name))
@@ -251,7 +237,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
                 }
             }
             
-            // --- Handle ambiguity or no matches ---
             if potential_matches.len() > 1 {
                 let levels: Vec<String> = potential_matches.iter().map(|p| p.level.to_string()).collect();
                 return Ok(format!("Found '{}' at multiple levels: {}. Please specify which one you are interested in.", best_match_name, levels.join(", ")));
@@ -262,22 +247,19 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
                 None => return Ok(format!("No programme found for '{}' at the specified level.", best_match_name)),
             };
 
-            // --- NEW: Parse the sections parameter from the tool arguments ---
             let sections_to_render: Option<HashSet<programme::ProgrammeSection>> = args.get("sections")
                 .and_then(|v| v.as_array())
                 .map(|arr| {
                     arr.iter()
                        .filter_map(|s| s.as_str())
-                       .filter_map(programme::ProgrammeSection::from_str) // Convert string to enum
+                       .filter_map(programme::ProgrammeSection::from_str)
                        .collect()
                 });
             
-            // --- Fetch page and render using the new filterable method ---
             let mut result = String::new();
             match get_page(&target_programme.url).await {
                 Ok(html) => {
                     let info = ProgrammeInfo::from(html);
-                    // MODIFIED: Call the new to_markdown method with the filter
                     result.push_str(&info.to_markdown(sections_to_render.as_ref()));
                 }
                 Err(_) => {
@@ -288,10 +270,11 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         })
     });
 
-    
     let programme_info_tool = ToolBuilder::new()
         .function_name("get_programme_info")
-        .function_description("Return detailed programme information (ECTS, duration, etc.). If a programme with the same name exists at multiple levels, you must use the 'level' parameter to disambiguate.")
+        .function_description(
+            "Return detailed programme information (ECTS, duration, etc.). If a programme with the same name exists at multiple levels, you must use the 'level' parameter to disambiguate. Use the 'sections' parameter to be efficient and request only the information you need."
+        )
         .add_property("name", "string", "Full or partial name of the study programme.").add_required_property("name")
         .add_property("level", "string", "Optional study level to filter by: 'undergraduate', 'master', or 'doctoral'.")
         .add_property("sections", "array", 
@@ -299,8 +282,7 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         )
         .executor(programme_info_executor)
         .build()?;
-
-
+        
     let agent = AgentBuilder::default()
         .set_model("qwen3:30b")
         .set_ollama_endpoint("http://hivecore.famnit.upr.si")
@@ -345,10 +327,7 @@ impl Service {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
         let resp = agent.invoke(question.question).await;
-        let _memory_resp = agent.invoke("Is there any memory you would like to store? \
-        Note what information is already included in the memory and avoid duplicating information.").await;
-        
-        println!("{:#?}", agent.history);
+        let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
         Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }
 }
@@ -386,8 +365,7 @@ async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
     Ok(content)
 }
 
-/// Parses a programme list page (e.g., for undergraduate) to extract programme names and their URLs.
-pub fn parse_programme_list_page(html: &str, level: ProgrammeLevel) -> Vec<Programme> {
+fn parse_programme_list_page(html: &str, level: ProgrammeLevel) -> Vec<Programme> {
     let doc = Html::parse_document(html);
     let selector = Selector::parse("div.content ul li a").unwrap();
     let base_url = Url::parse(BASE_URL).expect("Failed to parse base URL");
@@ -395,7 +373,6 @@ pub fn parse_programme_list_page(html: &str, level: ProgrammeLevel) -> Vec<Progr
 
     for element in doc.select(&selector) {
         let raw_name = element.text().collect::<String>();
-        // Clean up the name by removing parenthetical notes like "(also available in English)"
         let name = raw_name.split('(').next().unwrap_or("").trim().to_string();
 
         if let Some(href) = element.value().attr("href") {
