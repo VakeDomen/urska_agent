@@ -112,6 +112,7 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
 • Always specify the programme level in your answer (e.g., "The undergraduate programme in Mathematics...").
 • Do not use 'etc.', but write the whole answer.
 • If you refer the user to an external resource, or if the tool provides a source URL, always include it in your response.
+• In the <final>message</final> write the whole answer and avoid referencing the user to previous messages as they don't see anything outside <final> tags.
 "#;
 
     let programme_sources = vec![
@@ -296,7 +297,6 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         .add_tool(list_programmes_tool)
         .add_tool(similar_programmes_tool)
         .add_tool(programme_info_tool)
-        .strip_thinking(false)
         .build()
         .await?;
 
