@@ -73,10 +73,10 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
 
 → **get_web_page_content** – fetch extra HTML when the profile URL is known but not yet cached.  
 
-→ **store_memory** – whenever you uncover a *new, durable fact* (one fact per call).  
-  • Check with `query_memory` first to avoid duplicates.  
-  • Typical facts: “Programming III is taught by Domen Vake and Aleksandar Tošić.”  
+→ **store_memory** – whenever a tool presents information that was not present during memory query and may be usefull. Even if it may be usefull at some other time and not right now.  
+  • Typical facts: “Programming III is taught by Domen Vake.”  
   • Call **before** you send the final answer.
+  • Assess if a call needs to be made after every tool call.
 
 ────────────────────────────────────────────────────────
 6 WORKFLOW (after the initial memory check)  
@@ -95,7 +95,7 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
    d. Capture any new “Courses taught” facts and store them via `store_memory`.  
 6. Self-check: remove rows not in the directory; leave “—” for unretrievable data.  
 7. If more than fifty matches remain, ask the user to narrow the query.  
-8. When **all essential information is gathered and stored in memory**, wrap the final answer in `<final> … </final>`.
+8. When **all essential information is gathered AND STORED IN MEMORY**, wrap the final answer in `<final> … </final>`.
 
 ────────────────────────────────────────────────────────
 7 ANSWER FORMATTING  
@@ -250,6 +250,7 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
         .add_tool(staff_profiles_tool)
         .add_tool(similar_names_tool)
         // .set_stop_prompt(stop_prompt)
+        .strip_thinking(false)
         .build()
         .await?;
 
@@ -304,6 +305,10 @@ impl Service {
 
         let resp = agent.invoke(question.question).await;
         println!("{:#?}", agent);
+
+        let memory_resp = agent.invoke("Is there any memory you would like to store?").await;
+        println!("{:#?}", memory_resp.unwrap().content);
+
         Ok(CallToolResult::success(vec![Content::text(
             resp.unwrap().content.unwrap()
         )]))
