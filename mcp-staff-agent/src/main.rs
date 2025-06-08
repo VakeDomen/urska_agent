@@ -269,26 +269,31 @@ struct Service {
 
 #[tool(tool_box)]
 impl Service {
-    pub fn new(agent: Agent) -> Self {
-        Self {
-            agent: Arc::new(Mutex::new(agent))
-        }
-    }
+    pub fn new(agent: Agent) -> Self { Self { agent: Arc::new(Mutex::new(agent)) } }
 
-    #[tool(description = "Ask the agent")]
-    pub async fn ask(
-        &self, 
-        #[tool(aggr)] question: StructRequest,
-    ) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(
+        description = r#"
+Use this tool to ask an expert agent about employees at the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
+
+This tool is ideal for finding specific information about staff members, including their office location, phone number, email address, department, research fields, and the courses they teach.
+
+### How to phrase your question:
+- Use the full name of the employee if you know it for the most accurate results.
+- Be specific about the information you need. For example, ask "What is their office number?"
+- Ask one clear question at a time.
+
+### Example questions:
+- "What is the email address for Domen Vake?"
+- "Which courses does Janez Novak teach?"
+- "What is the office location and phone number for dr. Branko Kavšek?"
+"#
+    )]
+    pub async fn ask_staff_expert(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
-
         let resp = agent.invoke(question.question).await;
         let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
-
-        Ok(CallToolResult::success(vec![Content::text(
-            resp.unwrap().content.unwrap()
-        )]))
+        Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }
 }
 
@@ -296,7 +301,7 @@ impl Service {
 impl ServerHandler for Service {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some("A simple calculator".into()),
+            instructions: Some("An agent about employees at the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT)".into()),
             capabilities: ServerCapabilities::builder()
                 .enable_tools()
                 .build(),

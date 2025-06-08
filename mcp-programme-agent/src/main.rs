@@ -324,8 +324,24 @@ struct Service {
 impl Service {
     pub fn new(agent: Agent) -> Self { Self { agent: Arc::new(Mutex::new(agent)) } }
 
-    #[tool(description = "Ask the agent")]
-    pub async fn ask(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
+    #[tool(
+        description = r#"
+Use this tool to ask an expert agent about the study programmes at the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
+
+This tool is ideal for answering specific questions about undergraduate, master's, or doctoral programmes. The agent can provide details on admission requirements, course lists, programme structure, ECTS credits, coordinators, and more.
+
+### How to phrase your question:
+- Be specific. For example, instead of asking "Tell me about computer science," ask "What are the admission requirements for the undergraduate Computer Science programme?"
+- If you know the study level (e.g., "master's"), include it in the question for a more precise answer.
+- Ask one clear question at a time.
+
+### Example questions:
+- "What courses are in the second year of the master's programme in Data Science?"
+- "Who is the coordinator for the undergraduate Biopsychology programme?"
+- "What are the main goals of the doctoral programme in Mathematical Sciences?"
+"#
+    )]
+    pub async fn ask_programme_expert(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
         let resp = agent.invoke(question.question).await;
