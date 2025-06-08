@@ -9,79 +9,110 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
+use crate::{profile::StaffProfile, programme::ProgrammeInfo};
+
+mod profile;
+mod programme;
+
 
 const BIND_ADDRESS: &str = "127.0.0.1:8001";
 
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let profile_page = get_page("https://www.famnit.upr.si/en/education/undergraduate/cs-first/").await;
 
+    if profile_page.is_err() {
+        return Ok(());
+    }
+    let profile_page = profile_page.unwrap();
+    let programme = ProgrammeInfo::from(profile_page);
+
+    println!("{}", programme);
    
     init_default_tracing();
     let agent_system_prompt = r#"
-    You are **UniStaff-Agent**, an assistant that answers questions about university employees.
+You are **UniStaff-Agent**, a focused assistant that answers questions about university employees on *famnit.upr.si* and builds up a factual **long-term memory**.
 
-    ---
+────────────────────────────────────────────────────────
+1 LANGUAGE  
+• Detect whether the user writes in **Slovenian** or **English**.  
+• Always reply in that same language.
 
-    ## INPUT CONTEXT  
-    * At the start of each conversation you receive the scraped HTML of the main staff-directory page.  
-    * Every row holds **surname**, **given name**, and when available **e-mail**, **phone** and an **href** pointing to the full profile.  
-    * You can call **get_web_page_content(url: string) → html** to fetch any extra public page on the same host (*famnit.upr.si*).  
-    * Most (not all) personal links follow  
-    `https://www.famnit.upr.si/en/about-faculty/staff/<firstname>.<lastname>`.
+────────────────────────────────────────────────────────
+2 PLANNING & REFLECTION  
+• **Immediately after reading the user’s request, draft a short, numbered plan** that lists the steps you intend to take (e.g., “1. Query memory … 2. Check ambiguity … 3. Fetch profiles …”).  
+• After every tool call or newly received information, **reflect** on your current progress:  
+  – Note which steps are done, which remain, and whether new tasks are necessary.  
+  – If required, update the plan before proceeding.  
+• Only proceed to the next action when the plan is up-to-date.
 
-    ---
+────────────────────────────────────────────────────────
+3 MEMORY-FIRST POLICY  
+• **Always start** with `query_memory({ "query_text": "<original user message>", "top_k": 5 })`.  
+• If the memories fully answer the request, respond directly.  
+• If they answer only part, include what you have and follow the plan to obtain the rest.  
+• If nothing useful is found, follow the plan for live scraping.
 
-    ## WORKFLOW  
-    1. **Language detection** – identify whether the request is in Slovenian or English and reply in that language.  
+────────────────────────────────────────────────────────
+4 AMBIGUITY HANDLING (names)  
+• Split multiple names on “and”, “&”, commas, or newlines.  
+• Fuzzy-match each fragment:  
+  – One hit → accept silently.  
+  – Several hits → ask **one concise clarifying question**.  
+  – Zero hits → apologise briefly for that name only.  
+• Continue with all uniquely resolved names even if others need clarification.
 
-    2. **Ambiguity check** – if the request mentions one or *several* persons and any of them is underspecified:
-    * Split the query into individual name fragments (comma/“and”/newline separators).
-    * For **each** fragment:
-        * search the staff list with fuzzy matching (initials, diacritics, minor typos);
-        * if exactly **one** hit is found, accept it silently and continue – do **not** warn that the name was “not found”;
-        * if several hits remain, collect them and ask **one concise clarifying question** before tool calls;
-        * if zero hits remain after fuzzy search, apologise briefly for that specific name only.
-    * Proceed to answer for **all successfully resolved names** even if some other names still need clarification.
+────────────────────────────────────────────────────────
+5 TOOLS – WHEN & HOW  
 
-    3. **Query analysis** – extract the requested attributes (phone, e-mail …) and all filters (name fragment, department, e-mail domain …).  
+→ **query_memory** – always the first call (see §3).  
 
-    4. **Local parsing** – examine the supplied staff-list HTML and select rows that satisfy the filters.  
+→ **get_staff_profiles** – when you know the person’s name and need the full profile.  
+  Example payload: `{ "name": "Janez Novak", "k": 1 }`
 
-    5. **Attribute completion** for each selected employee  
-    1. Record attributes already present in the row.  
-    2. If any requested attribute is missing, fetch the profile with **get_web_page_content**. You may retry this multiple times. 
-    3. On failure, retry up to **three** times with back-off and simple heuristics (e.g. switch language prefix `/sl/` ↔ `/en/`).  
+→ **get_web_page_content** – fetch extra HTML when the profile URL is known but not yet cached.  
 
-    6. **Self-check & correction**  
-    * Verify that every row in the draft answer matches a name present in the original list; **remove any entry that is not**.  
-    * Re-parse cached HTML with alternative selectors if something is still missing.  
-    * If an attribute cannot be recovered, leave the placeholder “—”.  
+→ **store_memory** – whenever you uncover a *new, durable fact* (one fact per call).  
+  • Check with `query_memory` first to avoid duplicates.  
+  • Typical facts: “Programming III is taught by Domen Vake and Aleksandar Tošić.”  
+  • Call **before** you send the final answer.
 
-    7. **Result limiting** – if more than 50 matches remain, stop, inform the user and ask for narrower criteria.  
+────────────────────────────────────────────────────────
+6 WORKFLOW (after the initial memory check)  
 
-    8. **Compose the answer** following the output rules below.
+1. Produce a plan (see §2).  
+2. Run the ambiguity routine (see §4).  
+3. Determine requested attributes and filters.  
+4. Course-based query?  
+   – If memory did not already answer “Who teaches X?”:  
+     a. Search relevant staff profiles.  
+     b. Extract and store “course ↔ lecturer” facts with `store_memory`.  
+5. Name-based query:  
+   a. Parse the staff directory rows.  
+   b. Record attributes present.  
+   c. Fetch missing attributes with `get_staff_profiles`, retry up to three times (switching `/en/` ↔ `/sl/`).  
+   d. Capture any new “Courses taught” facts and store them via `store_memory`.  
+6. Self-check: remove rows not in the directory; leave “—” for unretrievable data.  
+7. If more than fifty matches remain, ask the user to narrow the query.  
+8. When **all essential information is gathered and stored in memory**, wrap the final answer in `<final> … </final>`.
 
-    ---
+────────────────────────────────────────────────────────
+7 ANSWER FORMATTING  
 
-    ## OUTPUT FORMAT  
-    * Respond in **Markdown**.  
-    * If two (2) or more attributes are returned, output a table whose header lists **exactly** the user-requested fields in the same order.  
-    * Missing values → “—”.  
-    * If the user asked for a single simple fact, a short sentence or bullet is enough.  
-    * Never invent data or reveal raw HTML or tool arguments unless explicitly asked.  
-    * When you are ready to respond to the user, wrap the final answer inside `<final>…</final>` tags.
+• One simple fact → short sentence or bullet.  
+• Two or more attributes → Markdown table whose header lists **exactly** the user-requested fields in order.  
+• Unknown values → “—”.  
+• Never reveal raw HTML, internal code, or tool arguments unless explicitly asked.
 
-    ---
+────────────────────────────────────────────────────────
+8 COURTESY & ERROR HANDLING  
 
-    ## COURTESY & ERROR HANDLING  
-    * Never report “closest match is X” when X already *is* a unique fuzzy hit – just use X.  
-    * If the query mentions multiple names, return results for the ones you could resolve and clearly list the names that could **not** be matched, asking the user only about those.
-    * If no rows match, apologise briefly and state that no results were found.  
-    * If a fetch ultimately fails, report that the page could not be reached.  
-    * Avoid repeat tool calls; never guess or fabricate URLs or names.
-
-    ---
+• Do not mention “closest match” when the hit is unique.  
+• If every retry to fetch a profile fails, state “Page could not be reached.”  
+• If no employees match, apologise briefly and state that no results were found.  
+• Never fabricate data or URLs.  
+• Store only lasting facts; skip temporary details such as short-term office hours.
 
     "#;
     
@@ -91,7 +122,7 @@ async fn main() -> Result<()> {
     // Your previous output is noted. Now, explicitly decide your next step:
 
     // 1.  **Continue Working:** If you need to perform more actions (like calling a tool such 
-    // as `add_memory`, `get_current_weather`, `query_memory`, or doing more internal 
+    // as `store_memory`, `get_current_weather`, `query_memory`, or doing more internal 
     // reasoning), clearly state your next specific action or internal thought. **Do NOT use 
     // `<final>` tags for this.**
 
@@ -103,14 +134,19 @@ async fn main() -> Result<()> {
     // "#;
 
     let staff_list_result = get_page("https://www.famnit.upr.si/en/about-faculty/staff/").await;
-    let all_names = match staff_list_result {
-        Ok(staff_list) => staff_html_to_markdown(&staff_list).1,
+    let all_staff = match staff_list_result {
+        Ok(staff_list) => staff_html_to_markdown(&staff_list),
         Err(e) => return Err(anyhow::anyhow!("Fetching employee list error: {:#?}", e.to_string()))
     };
 
+    let all_names_clone = all_staff.clone();
     let similar_names_executor: AsyncToolFn = {
         Arc::new(move |args: Value| {
-            let names = all_names.clone();
+            let names = all_names_clone
+                .clone()
+                .keys()
+                .map(|k| k.to_string())
+                .collect::<Vec<String>>();
             Box::pin(async move {
                 let names = names.clone();
                 
@@ -122,16 +158,81 @@ async fn main() -> Result<()> {
                     .and_then(|v| v.as_i64())
                     .unwrap_or_else(|| 5);
 
+
+
                 let names = rank_names(names, query_name)[0..k as usize].to_vec();
-                Ok(names.join("\n"))
+                Ok(names.join(" \n - "))
             })
         })
     };
 
+
+    let profile_executor: AsyncToolFn = {
+        Arc::new(move |args: Value| {
+            let names = all_staff.clone();
+            Box::pin(async move {
+                let profiles = names.clone();
+                let names = names
+                    .clone()
+                    .keys()
+                    .map(|k| k.to_string())
+                    .collect::<Vec<String>>();
+                let query_name = args.get("name")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| ToolExecutionError::ArgumentParsingError("Missing 'name' argument".into()))?;
+
+                let k = args.get("k")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_else(|| 1);
+
+                let top_names = rank_names(names, query_name)[0..k as usize].to_vec();
+
+                let mut result = "# Profiles \n\n ---\n\n".to_string();
+
+                for name in top_names {
+                    let profile_page_link = profiles.get(&name);
+                    if profile_page_link.is_none() {
+                        continue;
+                    }
+                    let profile_page_link = profile_page_link.unwrap();
+                    let profile_page = get_page(profile_page_link).await;
+
+                    if profile_page.is_err() {
+                        continue;
+                    }
+                    let profile_page = profile_page.unwrap();
+                    let profile = StaffProfile::from(profile_page);
+
+                    result = format!("{} \n\n --- \n\n {}", result, profile.to_string());
+   
+                }
+                Ok(result)
+            })
+        })
+    };
+
+
+    let staff_profiles_tool = ToolBuilder::new()
+        .function_name("get_staff_profiles")
+        .function_description(
+            "Return detailed staff-profile(s) in Markdown.\n\
+             • Use when the user asks for full information (office, phone, courses…)\n\
+             • Pass the query string as **name**; fuzzy match picks the best entries.\n\
+             • Optional **k** (default 1) limits how many top matches are returned.\n\
+             • The tool responds with a ready-to-display Markdown block headed “# Profiles”."
+        )
+        .add_property("name", "string",
+            "Full or partial name exactly as given in the user request.")
+        .add_property("k", "int",
+            "Number of top matches to return (max 5 is sensible).")
+        .add_required_property("name")
+        .executor(profile_executor)
+        .build()?;
+
     let similar_names_tool = ToolBuilder::new()
         .function_name("get_top_k_similar_names")
         .function_description("Given a name and optionally k (default 5), the tool returns top k similar \
-        names of employees to the queried name, based on levenstein distance.")
+        names of employees to the queried name, based on levenstein distance. Used to lookup names.")
         .add_property("name", "string", "The name that will be used to find similar named employees")
         .add_property("k", "int", "number of names to return")
         .add_required_property("name")
@@ -144,7 +245,9 @@ async fn main() -> Result<()> {
         .set_ollama_port(6666)
         .set_system_prompt(agent_system_prompt)
         .add_mcp_server(McpServerType::sse("http://localhost:8000/sse"))
+        .add_mcp_server(McpServerType::sse("http://localhost:8002/sse"))
         .set_stopword("<final>")
+        .add_tool(staff_profiles_tool)
         .add_tool(similar_names_tool)
         // .set_stop_prompt(stop_prompt)
         .build()
@@ -152,7 +255,7 @@ async fn main() -> Result<()> {
 
 
 
-        
+    println!("{:#?}", agent);
     
         
     
@@ -239,10 +342,6 @@ async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
             println!("client error: {:?}", e);
     })?;
 
-    let tools = client.list_tools(Default::default()).await?;
-    println!("Available tools: {tools:#?}");
-
-
     let tool_result = client
         .clone()
         .call_tool(CallToolRequestParam {
@@ -259,14 +358,14 @@ async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
     Ok(content)
 }
 
-pub fn staff_html_to_markdown(html: &str) -> (String, Vec<String>) {
+pub fn staff_html_to_markdown(html: &str) -> HashMap<String, String> {
     let doc     = Html::parse_document(html);
     let row_sel = Selector::parse("#osebje-list tr").unwrap();
     let td_sel  = Selector::parse("td").unwrap();
     let a_sel   = Selector::parse("a").unwrap();
 
     let mut out = Vec::new();
-    let mut names = vec![];
+    let mut names = HashMap::new();
     for row in doc.select(&row_sel) {
         // skip the header row (contains <th> instead of <td>)
         if row.select(&Selector::parse("th").unwrap()).next().is_some() {
@@ -303,11 +402,11 @@ pub fn staff_html_to_markdown(html: &str) -> (String, Vec<String>) {
         // if !phone.is_empty()       { line += &format!(" • {}", phone); }
         if !profile_url.is_empty() { line += &format!(" • [Profile]({})", profile_url); }
         // if !website_url.is_empty() { line += &format!(" • [Site]({})",    website_url); }
-        names.push(format!("{} {}", given, surname));
+        names.insert(format!("{} {}", given, surname), profile_url);
         out.push(line);
     }
 
-    (out.join("\n"), names)
+    names
 }
 
 
