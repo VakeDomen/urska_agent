@@ -6,13 +6,55 @@
 
 use html_escape::decode_html_entities;
 use scraper::{CaseSensitivity, ElementRef, Html, Node, Selector};
-use std::{collections::HashMap, fmt};
+use std::{collections::{HashMap, HashSet}, fmt::{self, Write}};
 
 /// One physical course row inside a timetable.
 ///
 /// *The first two columns (course name & ECTS) are always present; the rest
 ///  depend on the concrete table (L / S / T / LW / FW …).  You get every cell
 ///  as-is so you can decide later how to display them.*
+
+
+// Add this enum to programme.rs
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ProgrammeSection {
+    GeneralInfo,
+    Coordinators,
+    About,
+    Goals,
+    CourseStructure,
+    FieldWork,
+    CourseTables,
+    AdmissionRequirements,
+    TransferCriteria,
+    AdvancementRequirements,
+    CompletionRequirements,
+    Competencies,
+    EmploymentOpportunities,
+}
+
+// Helper to convert from string (which the LLM will provide) to the enum
+impl ProgrammeSection {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "general_info" => Some(Self::GeneralInfo),
+            "coordinators" => Some(Self::Coordinators),
+            "about" => Some(Self::About),
+            "goals" => Some(Self::Goals),
+            "course_structure" => Some(Self::CourseStructure),
+            "field_work" => Some(Self::FieldWork),
+            "course_tables" => Some(Self::CourseTables),
+            "admission_requirements" => Some(Self::AdmissionRequirements),
+            "transfer_criteria" => Some(Self::TransferCriteria),
+            "advancement_requirements" => Some(Self::AdvancementRequirements),
+            "completion_requirements" => Some(Self::CompletionRequirements),
+            "competencies" => Some(Self::Competencies),
+            "employment_opportunities" => Some(Self::EmploymentOpportunities),
+            _ => None,
+        }
+    }
+}
+
 
 #[derive(Debug)]
 pub struct CourseRow {
@@ -257,130 +299,94 @@ impl From<String> for ProgrammeInfo {
 
         /* ---------- 5.  Tables (div.medium + table) -------------------- */
 
-        let doc = Html::parse_document(&html);
-        let table_sel = Selector::parse("div.content > div > table").unwrap();
         let mut course_tables = vec![];
+        
         let table_sel = Selector::parse("div.content table").unwrap();
-        let row_sel   = Selector::parse("tr").unwrap();
-        let cell_sel  = Selector::parse("td, th").unwrap();
-        let div_sel   = Selector::parse("div").unwrap();
+        let row_sel = Selector::parse("tr").unwrap();
+        let th_sel = Selector::parse("th").unwrap();
+        let td_sel = Selector::parse("td").unwrap();
 
         for table in doc.select(&table_sel) {
-            // 1) Find the <div> that wraps this table
-            let wrapper_div = table
-                .parent()
-                .and_then(ElementRef::wrap)
-                .expect("table is not inside a <div>");
-
-            let mut seen_table = false;
             let mut heading = String::new();
             let mut caption = String::new();
 
-            // 2) Iterate *only* over that div’s direct children
-            if wrapper_div.children().count() > 4 {
-                // 1) First look for a sibling <div class="medium"> just before the table
-                println!("{:#?}", table.prev_sibling().map(|e| e.value().is_element()));
-                if let Some(prev_sib) = table
-                    .prev_sibling()
-                    .and_then(ElementRef::wrap)
-                    .filter(|e| {println!("FILTER"); e.value().has_class("medium", CaseSensitivity::AsciiCaseInsensitive)})
-                {
-                    println!("PREV TRUE");
-
-                    heading = prev_sib.text().collect::<Vec<_>>().join(" ").trim().to_string();
+            // 1. Find the table's heading (title).
+            // The correct way is to iterate through preceding siblings and take the first element.
+            if let Some(prev_el) = table.prev_siblings().filter_map(ElementRef::wrap).next() {
+                heading = text(&prev_el);
+            }
+            // Fallback for wrapped tables
+            else if let Some(parent) = table.parent() {
+                if let Some(parent_prev_el) = parent.prev_siblings().filter_map(ElementRef::wrap).next() {
+                    heading = text(&parent_prev_el);
                 }
-                
-                // 2) Otherwise, fall back to the generic “everything before the table” approach
-                else {
-                    let mut seen_table = false;
-                    for child in wrapper_div.children() {
-                        if let Node::Element(el) = child.value() {
-                            if el.name.local.as_ref() == "table" {
-                                seen_table = true;
-                                continue;
-                            }
-                        }
-                        let txt = child
-                            .descendants()
-                            .filter_map(|n| if let Node::Text(t) = n.value() {
-                                let s = t.trim();
-                                if !s.is_empty() { Some(s) } else { None }
-                            } else { None })
-                            .collect::<Vec<_>>()
-                            .join(" ");
-                        if txt.is_empty() { continue }
-                        if !seen_table {
-                            heading.push_str(&txt);
-                            heading.push(' ');
-                        } else {
-                            caption.push_str(&txt);
-                            caption.push(' ');
-                        }
-                    }
-                    heading = heading.trim().to_string();
-                    caption = caption.trim().to_string();
-                }
-            } else {
+            }
 
-                for child in wrapper_div.children() {
-                    match child.value() {
-                        // Once we hit the <table> tag, switch to caption mode
-                        Node::Element(el) if el.name.local.as_ref() == "table" => {
-                            seen_table = true;
-                            continue;
-                        }
-                        _ => {
-                            // Collect *all* text under this child by walking its descendants
-                            let txt = child
-                                .descendants()
-                                .filter_map(|n| {
-                                    if let Node::Text(t) = n.value() {
-                                        let s = t.trim();
-                                        if !s.is_empty() { Some(s) } else { None }
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join(" ");
-    
-                            if txt.is_empty() {
-                                continue;
-                            }
-                            if !seen_table {
-                                heading.push_str(&txt);
-                                heading.push(' ');
-                            } else {
-                                caption.push_str(&txt);
-                                caption.push(' ');
-                            }
-                        }
+            // 2. Find the table's caption (legend).
+            // Do the same with following siblings.
+            if let Some(next_el) = table.next_siblings().filter_map(ElementRef::wrap).next() {
+                let potential_caption = text(&next_el);
+                // Use heuristics to ensure it's a legend.
+                if potential_caption.to_lowercase().contains("l = lecture") || potential_caption.to_lowercase().contains("legend:") {
+                    caption = potential_caption;
+                }
+            }
+            // Fallback for wrapped tables
+            else if let Some(parent) = table.parent() {
+                if let Some(parent_next_el) = parent.next_siblings().filter_map(ElementRef::wrap).next() {
+                    let potential_caption = text(&parent_next_el);
+                    if potential_caption.to_lowercase().contains("l = lecture") || potential_caption.to_lowercase().contains("legend:") {
+                        caption = potential_caption;
                     }
                 }
             }
 
+            // Clean up extraneous whitespace from the extracted text.
+            heading = heading.split_whitespace().collect::<Vec<_>>().join(" ");
+            caption = caption.split_whitespace().collect::<Vec<_>>().join(" ");
 
-            let heading = heading.trim().to_string();
-            let caption = caption.trim().to_string();
-
-            // 3. Parse rows as before
+            // 3. Parse the table rows.
             let mut rows = Vec::new();
+
+            // First, determine if this is a table that can be mapped to `CourseRow`.
+            let header_texts: Vec<String> = table.select(&th_sel).map(|th| text(&th).to_lowercase()).collect();
+            let is_parsable_course_table = header_texts.iter().any(|h| h.contains("ects")) && header_texts.iter().any(|h| h.contains("course"));
+
+            if !is_parsable_course_table {
+                continue;
+            }
+
             for tr in table.select(&row_sel) {
-                let cells = tr
-                    .select(&cell_sel)
-                    .map(|td| td.text().collect::<String>().trim().to_string())
+                let cells: Vec<String> = tr
+                    .select(&td_sel)
+                    .map(|td| text(&td))
                     .collect::<Vec<_>>();
-                // adapt to whatever column count you need
-                if cells.len() >= 7 {
+
+                if cells.len() < 2 {
+                    continue;
+                }
+
+                let mut data_offset = 0;
+                if cells[0].ends_with('.') && cells[0].trim_end_matches('.').parse::<u32>().is_ok() {
+                    data_offset = 1;
+                }
+
+                let get_cell = |n: usize| -> String {
+                    cells.get(data_offset + n).cloned().unwrap_or_else(String::new)
+                };
+
+                let num_data_cols = cells.len() - data_offset;
+                
+                if num_data_cols >= 6 {
                     rows.push(CourseRow {
-                        course: cells[0].clone(),
-                        ects:   cells[1].clone(),
-                        l:      cells[2].clone(),
-                        s:      cells[3].clone(),
-                        t:      cells[4].clone(),
-                        lw:     cells[5].clone(),
-                        total:  cells[6].clone(),
-                        extra:  if cells.len() == 8 { Some(cells[6].clone()) } else { None },
+                        course: get_cell(0),
+                        ects:   get_cell(1),
+                        l:      get_cell(2),
+                        s:      get_cell(3),
+                        t:      get_cell(4),
+                        lw:     get_cell(5),
+                        extra:  if num_data_cols > 7 { Some(get_cell(6)) } else { None },
+                        total:  if num_data_cols > 7 { get_cell(7) } else { get_cell(6) },
                     });
                 }
             }
@@ -467,128 +473,137 @@ impl From<String> for ProgrammeInfo {
 /*  Markdown renderer                                                    */
 /* --------------------------------------------------------------------- */
 
-impl fmt::Display for ProgrammeInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "# {}\n", self.name)?;
-
-        writeln!(f, "**Type:** {}", self.programme_type)?;
-        writeln!(f, "**Degree awarded:** {}", self.degree_awarded)?;
-        writeln!(f, "**Duration:** {}", self.duration)?;
-        writeln!(f, "**ECTS credits:** {}", self.ects_credits)?;
-        writeln!(f, "**Structure:** {}", self.structure)?;
-        writeln!(f, "**Mode:** {}", self.mode_of_study)?;
-        writeln!(f, "**Language:** {}\n", self.language_of_study)?;
-
-        writeln!(f, "## Programme coordinator(s)")?;
-        for (name, href) in &self.coordinators {
-            writeln!(f, "- [{}]({})", name, href)?;
-        }
-        if let Some(link) = &self.student_services {
-            writeln!(
-                f,
-                "\nContact for admin procedures: [{}]({})\n",
-                "Student Services", link
-            )?;
-        }
-        if let Some(link) = &self.course_description {
-            writeln!(
-                f,
-                "Short course descriptions: [{}]({})\n",
-                "PDF",
-                link
-            )?;
-        }
-
-        let write_paras = |f: &mut fmt::Formatter<'_>, title: &str, paras: &[String]| -> fmt::Result {
-            if !paras.is_empty() {
-                writeln!(f, "## {}\n", title)?;
-                for p in paras {
-                    writeln!(f, "{}\n", p)?;
-                }
-            }
-            Ok(())
+impl ProgrammeInfo {
+    /// Render the profile as a Markdown string, optionally filtered by sections.
+    /// If `sections_to_render` is None or empty, all sections are rendered.
+    pub fn to_markdown(&self, sections_to_render: Option<&HashSet<ProgrammeSection>>) -> String {
+        let mut f = String::new();
+        let should_render = |section: &ProgrammeSection| -> bool {
+            sections_to_render.map_or(true, |s| s.is_empty() || s.contains(section))
         };
 
-        write_paras(f, "About the programme", &self.about)?;
-        if !self.goals.is_empty() {
-            writeln!(f, "## Educational & professional goals")?;
-            for (i, g) in self.goals.iter().enumerate() {
-                writeln!(f, "{}. {}", i + 1, g)?;
-            }
-            writeln!(f)?;
-        }
-
-        write_paras(f, "Course structure (notes)", &self.course_structure_notes)?;
-        write_paras(f, "Field work", &self.field_work)?;
-
-        writeln!(f, "## Course tables")?;
-        for table in &self.course_tables {
-            writeln!(f, "### {}\n", table.title)?;
-            writeln!(f, "| Course | ECTS | L | S | T | LW{}| Total |",
-                if table.rows.first().and_then(|r| r.extra.as_ref()).is_some() { " | Extra " } else { "" }
-            )?;
-            writeln!(f, "|---|---|---|---|---|---{}|---|",
-                if table.rows.first().and_then(|r| r.extra.as_ref()).is_some() { "|---" } else { "" }
-            )?;
-            for row in &table.rows {
-                write!(
-                    f,
-                    "| {} | {} | {} | {} | {} | {}",
-                    row.course, row.ects, row.l, row.s, row.t, row.lw
-                )?;
-                if let Some(extra) = &row.extra {
-                    write!(f, " | {}", extra)?;
-                }
-                writeln!(f, " | {} |", row.total)?;
-            }
-            writeln!(f)?;
-            writeln!(f, "{}", table.caption)?;
-            writeln!(f)?;
-            writeln!(f)?;
-        }
-
-        if !self.admission_requirements.is_empty() {
-            writeln!(f, "## Admission requirements")?;
-            for (i, r) in self.admission_requirements.iter().enumerate() {
-                writeln!(f, "{}. {}", i + 1, r)?;
-            }
-            writeln!(f)?;
-        }
-
-        if !self.transfer_criteria.is_empty() {
-            writeln!(f, "## Continuation of studies (transfer criteria)")?;
-            for (i, r) in self.transfer_criteria.iter().enumerate() {
-                writeln!(f, "{}. {}", i + 1, r)?;
-            }
-            writeln!(f)?;
-        }
-
-        write_paras(f, "Advancement requirements", &self.advancement_requirements)?;
-
-        if let Some(ref c) = self.completion_requirements {
-            writeln!(f, "### Requirements for completion of studies\n{}\n", c)?;
-        }
-
-        if !self.competencies_general.is_empty() || !self.competencies_subject.is_empty() {
-            writeln!(f, "## Graduate competencies")?;
-            if !self.competencies_general.is_empty() {
-                writeln!(f, "\n**General:**")?;
-                for (i, g) in self.competencies_general.iter().enumerate() {
-                    writeln!(f, "{}. {}", i + 1, g)?;
+        // Helper closures for writing DRY code
+        let write_paras = |f: &mut String, title: &str, paras: &[String]| {
+            if !paras.is_empty() {
+                writeln!(f, "## {}\n", title).unwrap();
+                for p in paras {
+                    writeln!(f, "{}\n", p).unwrap();
                 }
             }
-            if !self.competencies_subject.is_empty() {
-                writeln!(f, "\n**Subject-specific:**")?;
-                for (i, g) in self.competencies_subject.iter().enumerate() {
-                    writeln!(f, "{}. {}", i + 1, g)?;
+        };
+        let write_list = |f: &mut String, title: &str, items: &[String]| {
+            if !items.is_empty() {
+                writeln!(f, "## {}\n", title).unwrap();
+                for (i, item) in items.iter().enumerate() {
+                    writeln!(f, "{}. {}", i + 1, item).unwrap();
                 }
+                writeln!(f).unwrap();
             }
-            writeln!(f)?;
+        };
+
+        // --- Render sections based on the filter ---
+
+        writeln!(&mut f, "# {}\n", self.name).unwrap();
+
+        if should_render(&ProgrammeSection::GeneralInfo) {
+            writeln!(&mut f, "**Type:** {}", self.programme_type).unwrap();
+            writeln!(&mut f, "**Degree awarded:** {}", self.degree_awarded).unwrap();
+            writeln!(&mut f, "**Duration:** {}", self.duration).unwrap();
+            writeln!(&mut f, "**ECTS credits:** {}", self.ects_credits).unwrap();
+            writeln!(&mut f, "**Structure:** {}", self.structure).unwrap();
+            writeln!(&mut f, "**Mode:** {}", self.mode_of_study).unwrap();
+            writeln!(&mut f, "**Language:** {}\n", self.language_of_study).unwrap();
         }
 
-        write_paras(f, "Graduate employment opportunities", &self.employment_opportunities)?;
+        if should_render(&ProgrammeSection::Coordinators) {
+            writeln!(&mut f, "## Programme coordinator(s)").unwrap();
+            for (name, href) in &self.coordinators {
+                writeln!(&mut f, "- [{}]({})", name, href).unwrap();
+            }
+            if let Some(link) = &self.student_services {
+                writeln!(&mut f, "\nContact for admin procedures: [{}]({})\n", "Student Services", link).unwrap();
+            }
+            if let Some(link) = &self.course_description {
+                writeln!(&mut f, "Short course descriptions: [{}]({})\n", "PDF", link).unwrap();
+            }
+        }
 
-        Ok(())
+        if should_render(&ProgrammeSection::About) {
+            write_paras(&mut f, "About the programme", &self.about);
+        }
+        if should_render(&ProgrammeSection::Goals) {
+            write_list(&mut f, "Educational & professional goals", &self.goals);
+        }
+        if should_render(&ProgrammeSection::CourseStructure) {
+            write_paras(&mut f, "Course structure (notes)", &self.course_structure_notes);
+        }
+        if should_render(&ProgrammeSection::FieldWork) {
+            write_paras(&mut f, "Field work", &self.field_work);
+        }
+
+        if should_render(&ProgrammeSection::CourseTables) {
+            writeln!(&mut f, "## Course tables").unwrap();
+            for table in &self.course_tables {
+                writeln!(&mut f, "### {}\n", table.title).unwrap();
+                let has_extra = table.rows.first().and_then(|r| r.extra.as_ref()).is_some();
+                writeln!(&mut f, "| Course | ECTS | L | S | T | LW{}| Total |", if has_extra { " | Extra " } else { "" }).unwrap();
+                writeln!(&mut f, "|---|---|---|---|---|---{}|---|", if has_extra { "|---" } else { "" }).unwrap();
+                for row in &table.rows {
+                    write!(&mut f, "| {} | {} | {} | {} | {} | {}", row.course, row.ects, row.l, row.s, row.t, row.lw).unwrap();
+                    if let Some(extra) = &row.extra {
+                        write!(&mut f, " | {}", extra).unwrap();
+                    }
+                    writeln!(&mut f, " | {} |", row.total).unwrap();
+                }
+                writeln!(&mut f, "\n{}\n", table.caption).unwrap();
+            }
+        }
+
+        if should_render(&ProgrammeSection::AdmissionRequirements) {
+            write_list(&mut f, "Admission requirements", &self.admission_requirements);
+        }
+        if should_render(&ProgrammeSection::TransferCriteria) {
+            write_list(&mut f, "Continuation of studies (transfer criteria)", &self.transfer_criteria);
+        }
+        if should_render(&ProgrammeSection::AdvancementRequirements) {
+            write_paras(&mut f, "Advancement requirements", &self.advancement_requirements);
+        }
+        if should_render(&ProgrammeSection::CompletionRequirements) {
+            if let Some(ref c) = self.completion_requirements {
+                writeln!(&mut f, "### Requirements for completion of studies\n{}\n", c).unwrap();
+            }
+        }
+
+        if should_render(&ProgrammeSection::Competencies) {
+            if !self.competencies_general.is_empty() || !self.competencies_subject.is_empty() {
+                writeln!(&mut f, "## Graduate competencies").unwrap();
+                if !self.competencies_general.is_empty() {
+                    writeln!(&mut f, "\n**General:**").unwrap();
+                    for (i, g) in self.competencies_general.iter().enumerate() {
+                        writeln!(&mut f, "{}. {}", i + 1, g).unwrap();
+                    }
+                }
+                if !self.competencies_subject.is_empty() {
+                    writeln!(&mut f, "\n**Subject-specific:**").unwrap();
+                    for (i, g) in self.competencies_subject.iter().enumerate() {
+                        writeln!(&mut f, "{}. {}", i + 1, g).unwrap();
+                    }
+                }
+                writeln!(&mut f).unwrap();
+            }
+        }
+        
+        if should_render(&ProgrammeSection::EmploymentOpportunities) {
+            write_paras(&mut f, "Graduate employment opportunities", &self.employment_opportunities);
+        }
+
+        f
     }
 }
 
+// The old Display trait now just calls the new method with no filter
+impl fmt::Display for ProgrammeInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_markdown(None))
+    }
+}
