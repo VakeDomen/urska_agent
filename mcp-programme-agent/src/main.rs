@@ -10,7 +10,7 @@ use scraper::{Html, Selector};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
-use crate::{programme::{ProgrammeInfo}, util::rank_names};
+use crate::{programme::ProgrammeInfo, util::rank_names};
 
 mod programme;
 mod util;
@@ -80,7 +80,7 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
 
 → **get_similar_programme_names** - Use to find programme names when the user's query is misspelled or a partial match.
 
-→ **get_programme_info** – Use to get definitive information about a programme.
+→ **get_programme_info** – Use to get definitive information about a programme. This tool always fetches live data from the website to ensure the information is up-to-date.
   • **BE EFFICIENT:** Use the `sections` parameter to request **only the information you need.**
   • Example (User asks for admission requirements): `{ "name": "...", "level": "...", "sections": ["admission_requirements"] }`
   • Example (User asks for a list of courses): `{ "name": "...", "level": "...", "sections": ["course_tables"] }`
@@ -111,7 +111,7 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
 • For unknown values, use "—".
 • Always specify the programme level in your answer (e.g., "The undergraduate programme in Mathematics...").
 • Do not use 'etc.', but write the whole answer.
-• If you refer the user to an external resource, always provide a link to the resource.
+• If you refer the user to an external resource, or if the tool provides a source URL, always include it in your response.
 "#;
 
     let programme_sources = vec![
@@ -261,6 +261,8 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
                 Ok(html) => {
                     let info = ProgrammeInfo::from(html);
                     result.push_str(&info.to_markdown(sections_to_render.as_ref()));
+                    // Append the source URL to the result
+                    result.push_str(&format!("\n\n---\n*Source: [{}]({})*", target_programme.url, target_programme.url));
                 }
                 Err(_) => {
                     result = format!("Could not retrieve information for '{}'.", target_programme.name);
@@ -287,7 +289,7 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
         .set_model("qwen3:30b")
         .set_ollama_endpoint("http://hivecore.famnit.upr.si")
         .set_ollama_port(6666)
-        .set_system_prompt(agent_system_prompt)
+        .set_system_prompt(agent_system_prompt.to_string())
         .add_mcp_server(McpServerType::sse("http://localhost:8000/sse"))
         .add_mcp_server(McpServerType::sse("http://localhost:8002/sse"))
         .set_stopword("<final>")
