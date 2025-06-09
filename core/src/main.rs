@@ -1,158 +1,156 @@
+use std::sync::Arc;
 
-use std::{error::Error, sync::Arc};
+use reagent::{init_default_tracing, Agent, AgentBuilder, AsyncToolFn, McpServerType, ToolBuilder, ToolExecutionError, Value};
+use rmcp::{
+    model::{CallToolRequestParam, CallToolResult, ClientCapabilities, ClientInfo, Content, Implementation, ServerCapabilities, ServerInfo}, schemars, tool, transport::{SseClientTransport, SseServer}, ServerHandler, ServiceExt
+};
+use anyhow::Result;
+use serde::Deserialize;
 use tokio::sync::Mutex;
-use reagent::{AgentBuilder, AsyncToolFn, McpServerType, ToolBuilder, ToolExecutionError};
-use serde_json::Value;
+
+
+// Define the addresses for the expert agents Urška will call
+const STAFF_AGENT_URL: &str = "http://localhost:8001/sse";
+const MEMORY_URL: &str = "http://localhost:8002/sse";
+const PROGRAMME_AGENT_URL: &str = "http://localhost:8003/sse";
+const SCRAPER_AGENT_URL: &str = "http://localhost:8000/sse"; 
+
+// Define the address where Urška herself will be hosted
+const BIND_ADDRESS: &str = "127.0.0.1:8004";
+
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let weather_agent = AgentBuilder::default()
-        .set_model("qwen3:30b")
-        .set_ollama_endpoint("http://hivecore.famnit.upr.si")
-        .set_ollama_port(6666)
-        .set_system_prompt("/no_think \nYou make up weather info in JSON. You always say it's snowing.")
-        .set_response_format(
-            r#"
-            {
-              "type":"object",
-              "properties":{
-                "windy":{"type":"boolean"},
-                "temperature":{"type":"integer"},
-                "description":{"type":"string"}
-              },
-              "required":["windy","temperature","description"]
-            }
-            "#,
-        )
-        .build()
-        .await?;
+async fn main() -> Result<()> {
+    init_default_tracing();
 
-    let weather_ref = Arc::new(Mutex::new(weather_agent));
-    let weather_exec: AsyncToolFn = {
-        let weather_ref = weather_ref.clone();
-        Arc::new(move |args: Value| {
-            let weather_ref = weather_ref.clone();
-            Box::pin(async move {
-                let mut agent = weather_ref.lock().await;
-                
-                let loc = args.get("location")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| ToolExecutionError::ArgumentParsingError("Missing 'location' argument".into()))?;
-
-                let prompt = format!("/no_think What is the weather in {}?", loc);
-
-                let resp = agent.invoke(prompt)
-                    .await
-                    .map_err(|e| ToolExecutionError::ExecutionFailed(e.to_string()))?;
-                Ok(resp.content.unwrap_or_default())
-            })
-        })
-    };
-
-    let weather_tool = ToolBuilder::new()
-        .function_name("get_current_weather")
-        .function_description("Returns a weather forecast for a given location")
-        .add_property("location", "string", "City name")
-        .add_required_property("location")
-        .executor(weather_exec)
-        .build()?;
-
-
+    // The system prompt defines Urška's role as a router.
     let agent_system_prompt = r#"
-    You are a helpful assistant. Your primary goal is to provide accurate, relevant, and 
-    context-aware responses by effectively managing and utilizing your memory.
+You are **Urška**, a helpful and knowledgeable assistant for the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT). Your primary role is to act as an intelligent router, delegating user questions to the correct specialized expert agent.
 
-    **Your Operational Protocol:**
+────────────────────────────────────────────────────────
+1 CORE ROLE: DISPATCHER
+• Your main job is to analyze a user's question and delegate it to the single most appropriate expert tool.
+• You do not answer questions from your own knowledge; you find the right expert to answer for you.
 
-    1.  **Understand User & Recall from Memory:**
-        * Carefully analyze the user's current query.
-        * Before formulating a response, consider if information from your long-term 
-        memory could be relevant.
-        * If you suspect relevant information might exist (e.g., related to past topics, 
-        user preferences, or facts previously discussed), **use the `query_memory` tool**.
-            * Formulate a concise `query_text` for the `query_memory` tool that captures 
-            the essence of what you're trying to recall. For example, if the user asks 
-            "What was that project I mentioned?", you might use `query_memory` with 
-            `query_text: "user's mentioned project"`.
-            * Review the results from `query_memory` to inform your response.
+────────────────────────────────────────────────────────
+2 LANGUAGE  
+• Detect whether the user writes in **Slovenian** or **English**.  
+• Always reply in that same language.
 
-    2.  **Identify New Key Information for Long-Term Storage:**
-        * As you process the user's query and prepare your response, critically assess 
-        if the current interaction contains **new, core information** that would be 
-        genuinely useful for maintaining context, understanding preferences, or improving 
-        the quality of future interactions.
-        * **Examples of information to consider saving with `add_memory`:**
-            * Explicit user preferences (e.g., "I prefer brief answers," "My name is Alex,"
-             "My favorite color is blue", "it's raining").
-            * Important facts or constraints stated by the user (e.g., "I'm working on a 
-            project about climate change," "The deadline is next Friday," "My current 
-            location is Koper").
-            * Key decisions made during the conversation.
-            * The central topic or goal if it's newly established or significantly shifts.
-        * **Do NOT save with `add_memory`:** Trivial details, information that is clearly 
-        transient, redundant information already likely captured effectively by 
-        `query_memory` from past saves, or every single piece of user input. Focus on 
-        the *value for future recall* of *newly established* important points.
+────────────────────────────────────────────────────────
+3 PLANNING & REFLECTION  
+• **Immediately after reading the user’s request, draft a short, numbered plan** that lists the steps you intend to take (e.g., "1. Analyze user query for topic. 2. Select expert tool. 3. Call tool with question.").
+• After every tool call, briefly reflect on the result before formatting the final answer.
 
-    3.  **Save to Memory (Action Step):**
-        * If you identify such **new key information** according to step 2, you **MUST 
-        use the `add_memory` tool** to store a concise summary or the direct piece of 
-        information as `text`.
-        * This `add_memory` action should typically occur *before* you provide your 
-        final answer to the user for the current query.
-        * *Example:* If the user says "My company is called 'Innovatech Solutions'", you 
-        should use `add_memory` with `text: "User's company: Innovatech Solutions"`.
+────────────────────────────────────────────────────────
+4 EXPERT DELEGATION LOGIC
+• Your primary task is to choose one tool based on the user's question. Follow this priority order:
 
-    4.  **Formulate & Deliver Response:**
-        * Once you have completed any necessary memory operations (using `query_memory` 
-        for recall and `add_memory` for saving new information), formulate and provide your 
-        answer to the user's current query.
-        * If you used `get_current_weather`, incorporate its output into your response.
+  1.  **Is it about a person?**
+      → Use `ask_staff_expert` for questions about employees (email, office, courses they teach, etc.).
 
-    Remember to prioritize helpfulness and relevance, leveraging your memory tools 
-    effectively. Always consider if querying existing memory or adding new information will
-    improve the current or future conversation."#;
+  2.  **Is it about a study programme?**
+      → Use `ask_programme_expert` for questions about courses, admission, ECTS, duration, etc.
+
+  3.  **Is it a general question about the faculty?**
+      → Use `scrape_web_page` as a last resort for topics like faculty history, news, or events. You must find and provide a full URL from the `https://www.famnit.upr.si` domain.
+
+• **Ambiguity Rule:** If a question involves both people and programmes (e.g., "Who is the coordinator for the Computer Science programme?"), prioritize the `ask_programme_expert` tool.
+• **Out of Scope:** If the question is not about UP FAMNIT, state that you cannot answer.
+
+────────────────────────────────────────────────────────
+5 WORKFLOW
+
+1.  Produce a plan.
+2.  Analyze the user's query to determine the topic (Staff, Programme, or General).
+3.  Select the single best tool based on the delegation logic.
+4.  Call the selected tool with the appropriate arguments (the user's question or a URL).
+5.  Receive the complete response from the expert agent.
+6.  Present the expert's response to the user, wrapped in `<final>` tags.
+
+────────────────────────────────────────────────────────
+6 ANSWER FORMATTING  
+
+• **Always wrap your final, complete response in `<final>...</final>` tags.**
+• Relay the expert's answer directly and accurately.
+• You may optionally introduce the answer by stating which expert was consulted, for example: "I consulted the staff expert and found the following:"
+• The final answer must be self-contained and not refer to previous messages.
+
+────────────────────────────────────────────────────────
+7 COURTESY & ERROR HANDLING  
+
+• If an expert tool fails or cannot be reached, inform the user gracefully (e.g., "I'm sorry, I was unable to reach the staff expert at the moment. Please try again later.").
+• If a question is clearly outside the scope of your available experts, state your limitations clearly.
+
+
+"#;
+
+
+        
+    // --- Agent Definition ---
     
-    let stop_prompt = r#"
-    **Decision Point:**
-
-    Your previous output is noted. Now, explicitly decide your next step:
-
-    1.  **Continue Working:** If you need to perform more actions (like calling a tool such 
-    as `add_memory`, `get_current_weather`, `query_memory`, or doing more internal 
-    reasoning), clearly state your next specific action or internal thought. **Do NOT use 
-    `<final>` tags for this.**
-
-    2.  **Final Answer:** If you completed all the tasks and want to submit the final answer 
-    for the user, re-send that **entire message** now, but wrap it in `<final>Your final message 
-    here</final>` tags.
-
-    Choose one option.
-    "#;
-
-    let mut agent = AgentBuilder::default()
-        .set_model("qwen3:30b")
+    let agent = AgentBuilder::default()
+        .set_model("qwen3:30b") // Or any other powerful model
         .set_ollama_endpoint("http://hivecore.famnit.upr.si")
         .set_ollama_port(6666)
-        .set_system_prompt(agent_system_prompt)
-        .add_mcp_server(McpServerType::sse("http://localhost:8001/sse"))
-        .add_mcp_server(McpServerType::sse("http://localhost:8002/sse"))
-        // .add_tool(weather_tool)
+        .set_system_prompt(agent_system_prompt.to_string())
         .set_stopword("<final>")
-        .set_stop_prompt(stop_prompt)
+        .add_mcp_server(McpServerType::Sse(STAFF_AGENT_URL.into()))
+        .add_mcp_server(McpServerType::Sse(PROGRAMME_AGENT_URL.into()))
+        .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
+        .add_mcp_server(McpServerType::Sse(MEMORY_URL.into()))
         .build()
         .await?;
 
-    let resp = agent.invoke("Say hello").await?;
-    println!("\n-> Agent: {}", resp.content.unwrap_or_default());
 
-    let resp = agent.invoke("What is the current weather in Koper?").await?;
-    println!("\n-> Agent: {}", resp.content.unwrap_or_default());
+    let ct = SseServer::serve(BIND_ADDRESS.parse()?)
+        .await?
+        .with_service(move || Service::new(agent.clone()));
 
-    let resp = agent.invoke("What do you remember?").await?;
-    println!("\n-> Agent: {}", resp.content.unwrap_or_default());
+    println!("Urška, the general agent, is listening on {}", BIND_ADDRESS);
+    println!("She can delegate tasks to:");
+    println!("- Staff Expert at {}", STAFF_AGENT_URL);
+    println!("- Programme Expert at {}", PROGRAMME_AGENT_URL);
+    println!("- Scraper Expert at {}", SCRAPER_AGENT_URL);
+    println!("- Memory at {}", MEMORY_URL);
 
-    println!("Agent: {:#?}", agent);
+    tokio::signal::ctrl_c().await?;
+    ct.cancel();
 
     Ok(())
+}
+
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StructRequest {
+    pub question: String,
+}
+
+#[derive(Debug, Clone)]
+struct Service {
+    agent: Arc<Mutex<Agent>>,
+}
+
+#[tool(tool_box)]
+impl Service {
+    pub fn new(agent: Agent) -> Self { Self { agent: Arc::new(Mutex::new(agent)) } }
+
+    #[tool(description = "Ask Urška a general question about UP FAMNIT. She will route it to the correct expert.")]
+    pub async fn ask_urska(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
+        let mut agent = self.agent.lock().await;
+        agent.clear_history();
+        let resp = agent.invoke(question.question).await;
+        Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
+    }
+}
+
+#[tool(tool_box)]
+impl ServerHandler for Service {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            instructions: Some("This is Urška, a router agent for questions about UP FAMNIT.".into()),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
+        }
+    }
 }
