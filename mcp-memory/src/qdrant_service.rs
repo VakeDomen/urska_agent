@@ -1,9 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-// src/qdrant_service.rs
-use qdrant_client::prelude::{Payload, QdrantClient, QdrantClientConfig}; use qdrant_client::qdrant::point_id::PointIdOptions;
-// Updated QdrantClientConfig import
+use qdrant_client::prelude::{Payload, QdrantClient}; 
+use qdrant_client::qdrant::point_id::PointIdOptions;
 use qdrant_client::qdrant::{
     vectors_config, CreateCollection, Distance, PointId, PointStruct, SearchPoints, VectorParams,
     VectorsConfig, // Keep Value if directly constructing qdrant::Value, not strictly needed here with serde_json conversion
@@ -196,30 +195,5 @@ impl QdrantService {
             .collect();
 
         Ok(results)
-    }
-}
-
-// Helper function to convert qdrant::Value to serde_json::Value
-// This is a simplified helper and might need to be more robust based on actual qdrant::Value structures you use.
-fn convert_qdrant_value_to_serde_json(q_value: qdrant_client::qdrant::Value) -> serde_json::Value {
-    use qdrant_client::qdrant::value::Kind;
-    match q_value.kind {
-        Some(Kind::NullValue(_)) => serde_json::Value::Null,
-        Some(Kind::BoolValue(b)) => serde_json::Value::Bool(b),
-        Some(Kind::DoubleValue(d)) => serde_json::Number::from_f64(d).map(serde_json::Value::Number).unwrap_or(serde_json::Value::Null),
-        Some(Kind::IntegerValue(i)) => serde_json::Value::Number(i.into()),
-        Some(Kind::StringValue(s)) => serde_json::Value::String(s),
-        Some(Kind::ListValue(list_value)) => {
-            serde_json::Value::Array(list_value.values.into_iter().map(convert_qdrant_value_to_serde_json).collect())
-        }
-        Some(Kind::StructValue(struct_value)) => {
-            let map: serde_json::Map<String, serde_json::Value> = struct_value
-                .fields
-                .into_iter()
-                .map(|(k, v)| (k, convert_qdrant_value_to_serde_json(v)))
-                .collect();
-            serde_json::Value::Object(map)
-        }
-        None => serde_json::Value::Null,
     }
 }

@@ -1350,7 +1350,7 @@ dependencies = [
 [[package]]
 name = "reagent"
 version = "0.1.0"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#5c02e8f63b628108ee083daef4390db7b62a56c7"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#ccd485db88e12a955719828a993eec3b1f2ef3db"
 dependencies = [
  "reqwest",
  "rmcp",

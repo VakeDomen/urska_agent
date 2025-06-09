@@ -5,8 +5,37 @@
 //! struct plus a nice Markdown renderer via `Display`.
 
 use html_escape::decode_html_entities;
-use scraper::{CaseSensitivity, ElementRef, Html, Node, Selector};
+use scraper::{ElementRef, Html, Selector};
 use std::{collections::{HashMap, HashSet}, fmt::{self, Write}};
+
+
+
+
+#[derive(Debug, Clone)]
+pub struct Programme {
+    pub name: String,
+    pub url: String,
+    pub level: ProgrammeLevel,
+}
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProgrammeLevel {
+    Undergraduate,
+    Master,
+    Doctoral,
+}
+
+impl fmt::Display for ProgrammeLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProgrammeLevel::Undergraduate => write!(f, "Undergraduate"),
+            ProgrammeLevel::Master => write!(f, "Master's"),
+            ProgrammeLevel::Doctoral => write!(f, "Doctoral"),
+        }
+    }
+}
+
 
 /// One physical course row inside a timetable.
 ///
@@ -133,20 +162,6 @@ fn list_items(list: &ElementRef) -> Vec<String> {
         .collect()
 }
 
-/// Split a `<p>` that contains “Label: value<br>`” triples.
-fn peel_value(lines: &[String], label: &str) -> String {
-    lines
-        .iter()
-        .find_map(|l| {
-            let lower = l.to_ascii_lowercase();
-            if lower.starts_with(&label.to_ascii_lowercase()) {
-                l.splitn(2, ':').nth(1).map(|s| s.trim().to_string())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| "—".into())
-}
 
 /* --------------------------------------------------------------------- */
 /*  Main parser                                                          */
@@ -157,7 +172,6 @@ impl From<String> for ProgrammeInfo {
         let doc = Html::parse_document(&html);
         let h1_sel = Selector::parse("h1").unwrap();
         let content_sel = Selector::parse("div.content").unwrap();
-        let a_sel = Selector::parse("a").unwrap();
 
         let name = text(
             &doc.select(&h1_sel)
@@ -191,14 +205,8 @@ impl From<String> for ProgrammeInfo {
 
         /* ---------- 2.  GENERAL INFORMATION (first P) ------------------- */
         // --- SELECTORS ---
-        let h1_sel = Selector::parse("h1").unwrap();
         let p_sel  = Selector::parse("div.content > p").unwrap();
-        let h2_sel = Selector::parse("div.content > h2").unwrap();
-        let h3_sel = Selector::parse("div.content > h3").unwrap();
-        let ul_sel = Selector::parse("div.content > ul, div.content > ol").unwrap();
         let a_sel  = Selector::parse("a").unwrap();
-        let med_tbl_sel = Selector::parse("div.content").unwrap();
-        let medium_or_table = Selector::parse("div.medium, table").unwrap();
 
         // --- 1. GENERAL INFO (first <p>) ---
         let general_html = doc
@@ -207,13 +215,13 @@ impl From<String> for ProgrammeInfo {
             .map(|p| p.inner_html())
             .unwrap_or_default();
 
-        let mut lines = general_html
+        let lines = general_html
             .split("<br")
             .map(|chunk| decode_html_entities(chunk).trim().to_string())
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>();
 
-        let mut peel = |label: &str| {
+        let peel = |label: &str| {
             lines
                 .iter()
                 .find(|l| l.to_lowercase().contains(&label.to_lowercase()))
