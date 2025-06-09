@@ -1,115 +1,164 @@
 use std::{collections::HashMap, sync::Arc};
 
-use reagent::{init_default_tracing, Agent, AgentBuilder, AsyncToolFn, McpServerType, ToolBuilder, ToolExecutionError, Value};
+use reagent::{init_default_tracing, Agent, AgentBuilder, AsyncToolFn, McpServerType, Message, ToolBuilder, ToolExecutionError, Value};
 use rmcp::{
     model::{CallToolRequestParam, CallToolResult, ClientCapabilities, ClientInfo, Content, Implementation, ServerCapabilities, ServerInfo}, schemars, tool, transport::{SseClientTransport, SseServer}, ServerHandler, ServiceExt
 };
 use anyhow::Result;
 use scraper::{Html, Selector};
 use serde::Deserialize;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
-use crate::{profile::StaffProfile, util::rank_names};
+use crate::{profile::StaffProfile, util::{history_to_memory_prompt, rank_names}};
 
 mod profile;
 mod util;
 
 
 const BIND_ADDRESS: &str = "127.0.0.1:8001";
+const MEMORY_MCP_URL: &str = "http://localhost:8002/sse";
+const SCRAPER_MCP_URL: &str = "http://localhost:8000/sse";
 
 
 #[tokio::main]
 async fn main() -> Result<()> {
     init_default_tracing();
+
+    // comm channel between response agent and memory agent
+    let (tx, mut rx) = mpsc::channel::<Vec<Message>>(32); 
+
+    let memory_storage_agent_prompt = r#"
+You are a meticulous librarian agent. Your sole purpose is to analyze conversation summaries, identify important new facts, and save them to long-term memory, ensuring no duplicates are created.
+
+────────────────────────────────────────────────────────
+1. CORE DIRECTIVE
+- Your only goal is to accurately identify and store **new, lasting facts**.
+- Your thinking process is important, but your final output should only be tool calls or a brief completion message.
+
+────────────────────────────────────────────────────────
+2. RULES FOR IDENTIFYING FACTS
+
+- **DO Store:** Specific, objective, and lasting information. (e.g., "Domen Vake teaches Programming III.")
+- **DO NOT Store:** Conversational filler, user questions, temporary information, or vague statements. Duplicate information!
+
+────────────────────────────────────────────────────────
+3. MANDATORY ITERATIVE WORKFLOW
+You must follow this exact, iterative process for every conversation summary you receive:
+
+1.  **Analyze & Identify:** Read the entire summary and internally create a list of all potential new facts that meet the criteria in §2.
+
+2.  **Verification & Storage Loop:** For **each individual potential fact** on your list, you must perform the following complete sub-routine before moving to the next fact:
+    
+    a. **Query:** Call the `query_memory` tool using the text of the *single potential fact* as the `query_text`.
+    
+    b. **Think & Decide:** After you get the results from `query_memory`. Your think process must be:
+        i. State the potential fact you are considering.
+        ii. State the results from the `query_memory` call.
+        iii. State your conclusion: whether the fact is new or a duplicate.
+        iv. State your decision: to call `store_memory` or to do nothing.
+    
+    c. **Act:** Based on your decision in the `<think>` block, either call `store_memory` or do nothing and move to the next potential fact.
+
+────────────────────────────────────────────────────────
+4. EXAMPLE OF A FULL think PROCESS
+
+This is the exact format you must follow.
+
+**EXAMPLE 1: Fact is a duplicate**
+
+<think>
+I am considering the potential fact: "Dr. Niki Hrovatin teaches Programiranje I."
+I will call `query_memory` to check for duplicates.
+</think>
+**(...you call query_memory({ "query_text": "Dr. Niki Hrovatin teaches Programiranje I." }) and get a result...)**
+
+<think>
+The `query_memory` tool returned: `["Dr. Niki Hrovatin teaches Programiranje I (Introduction to Programming)"]`.
+My analysis is that this fact is already in the memory.
+My decision is to **NOT** call `store_memory`. I will now move to the next potential fact.
+</think>
+
+**EXAMPLE 2: Fact is new**
+
+<think>
+I am considering the potential fact: "Dr. Niki Hrovatin's office is FAMNIT-VP-3."
+I will call `query_memory` to check for duplicates.
+</think>
+**(...you call query_memory({ "query_text": "Dr. Niki Hrovatin's office is FAMNIT-VP-3." }) and get an empty result...)**
+
+<think>
+The `query_memory` tool returned no relevant results.
+My analysis is that this fact is new and should be stored.
+My decision is to call `store_memory`.
+</think>
+**(...you call store_memory({ "memory": "Dr. Niki Hrovatin's office is FAMNIT-VP-3." })...)**
+
+────────────────────────────────────────────────────────
+5. COMPLETION
+After you have iterated through **all** potential facts, your task is complete. Output a brief summary, like "Processing complete. Stored 1 new fact and ignored 3 duplicates."
+
+REMINDER:
+- DUPLICATE INFORMATION SHOULD NEVER BE STORED IN THE MEMORY
+
+    "#;
+
     let agent_system_prompt = r#"
-    /no_think
-You are **UniStaff-Agent**, a focused assistant that answers questions about university employees on *famnit.upr.si* and builds up a factual **long-term memory**.
+    You are **UniStaff-Agent**, a focused assistant that answers questions about university employees on *famnit.upr.si*.
 
-────────────────────────────────────────────────────────
-1 LANGUAGE  
-• Detect whether the user writes in **Slovenian** or **English**.  
-• Always reply in that same language.
+    ────────────────────────────────────────────────────────
+    1 LANGUAGE  
+    • Detect whether the user writes in **Slovenian** or **English** and reply in that language.
 
-────────────────────────────────────────────────────────
-2 PLANNING & REFLECTION  
-• **Immediately after reading the user’s request, draft a short, numbered plan** that lists the steps you intend to take.
-• After every tool call or newly received information, **reflect** on your current progress, update the plan if necessary, and then proceed.
+    ────────────────────────────────────────────────────────
+    2 PLANNING & REFLECTION  
+    • **Immediately after reading the user’s request, draft a short, numbered plan.**
+    • After every tool call, **reflect** on your progress and update the plan.
 
-────────────────────────────────────────────────────────
-3 MEMORY-FIRST, BUT VERIFY
-• **Always start** with `query_memory`. Use retrieved memories to inform your plan.
-• **Crucial Principle:** Your memory is a helpful starting point, but it can be incomplete or outdated. The tools are the source of truth.
-• If the user asks for a list or a count of items (e.g., "list all courses they teach"), and you find a relevant memory, you **must still use a tool to fetch the complete, definitive profile** before answering to ensure the information is correct and complete.
+    ────────────────────────────────────────────────────────
+    3 MEMORY-FIRST, BUT VERIFY
+    • At the start of the conversation, you will find the results of a `query_memory` call already in your history. **Review these results first** to inform your plan.
+    • **Crucial Principle:** Your memory is a helpful starting point, but it can be incomplete. The tools are the source of truth.
+    • If the user asks for a list or a count of items (e.g., "list all courses they teach"), you **must still use `get_staff_profiles` to fetch the complete, definitive list** before answering.
 
-────────────────────────────────────────────────────────
-4 AMBIGUITY HANDLING (names)  
-• If multiple names are in a query, handle them individually.  
-• For each name, use `get_similar_programme_names` or `get_staff_profiles` to find the best match.
-• If there are several close matches for a name, ask **one concise clarifying question** for that name.
-• If a name has zero hits, apologize briefly for that name only.
-• Proceed with all uniquely resolved names.
+    ────────────────────────────────────────────────────────
+    4 TOOLS – OVERVIEW
+    • `get_staff_profiles`: Your primary tool for getting all details about a person.
+    • `get_web_page_content`: For fetching non-profile URLs.
 
-────────────────────────────────────────────────────────
-5 TOOLS – WHEN & HOW  
-
-→ **query_memory** – Always the first call.
-
-→ **get_staff_profiles** – Use this to get the definitive, up-to-date profile for a staff member. This is your primary source of truth for all employee details. The tool always fetches live data.
-
-→ **get_web_page_content** – Use this only if you have a specific, non-profile URL from a tool's output that you need to investigate further.
-
-→ **store_memory** – Call this to save new or corrected information.
-  • **IMPORTANT: Before storing, check if the fact already exists in memory. DO NOT add duplicate information.**
-  • If a tool call revealed that a memory was incomplete or incorrect (e.g., you found more courses taught by someone), use this to save the updated, complete fact.
-  • Call **before** sending the final answer.
-
-────────────────────────────────────────────────────────
-6 WORKFLOW (after initial memory check)  
-
-1.  Produce a plan.
-2.  Handle any name ambiguity using the clarification process (see §4).
-3.  For each requested person, determine what information is needed (e.g., email, courses).
-4.  **Call `get_staff_profiles` to get the complete and authoritative information.** Do this even if your memory has a partial answer.
-5.  Once you have the definitive information from the tool, compare it to your memory. Formulate your final answer using the **complete information from the tool output.**
-6.  **Before storing new facts with `store_memory`, review your initial `query_memory` results to ensure you are not adding duplicate data.** If your tool call corrected an incomplete memory, store the new, complete fact.
-7.  When all information is gathered and stored, wrap the final answer in `<final> … </final>`.
-
-────────────────────────────────────────────────────────
-7 ANSWER FORMATTING  
-
-• One simple fact → short sentence or bullet.  
-• Two or more attributes → A Markdown table is preferred.
-• Unknown values → “—”.  
-• Never reveal raw HTML or tool arguments.
-• If the profile includes a link to the employee's personal page, provide it.
-• In the `<final>message</final>` block, write the whole, self-contained answer. Do not refer to previous messages, as the user will not see them.
-
-────────────────────────────────────────────────────────
-8 COURTESY & ERROR HANDLING  
-
-• If you find a single, clear match for a name, do not mention "closest match."
-• If fetching a profile fails, state that the page could not be reached for that person.
-• If no employees match a query after checking, apologize briefly and state that no results were found.
-• Never fabricate data.
+    ────────────────────────────────────────────────────────
+    5 WORKFLOW
+    1.  Review the initial memory results in your history.
+    2.  Produce a plan.
+    3.  Handle any name ambiguity by asking for clarification if necessary.
+    4.  **Call `get_staff_profiles` to get the complete and authoritative information.** Do this even if your memory has a partial answer.
+    5.  Formulate your final answer using the **complete information from the tool output.**
+    6.  Wrap your final, self-contained answer in `<final> … </final>`.
 
     "#;
     
-    // let stop_prompt = r#"
-    // **Decision Point:**
 
-    // Your previous output is noted. Now, explicitly decide your next step:
+    let memory_storage_agent = Arc::new(AgentBuilder::default()
+        .set_model("qwen3:30b")
+        .set_ollama_endpoint("http://hivecore.famnit.upr.si")
+        .set_ollama_port(6666)
+        .set_system_prompt(memory_storage_agent_prompt)
+        .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL)) // Connect to the memory server
+        .build()
+        .await?);
 
-    // 1.  **Continue Working:** If you need to perform more actions (like calling a tool such 
-    // as `store_memory`, `get_current_weather`, `query_memory`, or doing more internal 
-    // reasoning), clearly state your next specific action or internal thought. **Do NOT use 
-    // `<final>` tags for this.**
+    // Spawn the background task that listens on the queue
+    tokio::spawn(async move {
+        while let Some(history) = rx.recv().await {
+            let mut agent = (*memory_storage_agent).clone();
+            agent.clear_history();
 
-    // 2.  **Final Answer:** If you completed all the tasks and want to submit the final answer 
-    // for the user, re-send that **entire message** now, but wrap it in `<final>Your final message 
-    // here</final>` tags.
+            let memory_prompt = history_to_memory_prompt(history);
+            
+            let _ = agent.invoke(&memory_prompt).await;
+            println!("[Memory Task]: Finished processing a conversation history.");
+        }
+    });
 
-    // Choose one option.
-    // "#;
 
     let staff_list_result = get_page("https://www.famnit.upr.si/en/about-faculty/staff/").await;
     let all_staff = match staff_list_result {
@@ -222,8 +271,8 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
         .set_ollama_endpoint("http://hivecore.famnit.upr.si")
         .set_ollama_port(6666)
         .set_system_prompt(agent_system_prompt)
-        .add_mcp_server(McpServerType::sse("http://localhost:8000/sse"))
-        .add_mcp_server(McpServerType::sse("http://localhost:8002/sse"))
+        .add_mcp_server(McpServerType::sse(SCRAPER_MCP_URL))
+        .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL))
         .set_stopword("<final>")
         .add_tool(staff_profiles_tool)
         .add_tool(similar_names_tool)
@@ -236,7 +285,7 @@ You are **UniStaff-Agent**, a focused assistant that answers questions about uni
 
     let ct = SseServer::serve(BIND_ADDRESS.parse()?)
         .await?
-        .with_service(move || Service::new(agent.clone()));
+        .with_service(move || Service::new(agent.clone(), tx.clone()));
 
     tokio::signal::ctrl_c().await?;
     ct.cancel();
@@ -253,11 +302,14 @@ pub struct StructRequest {
 #[derive(Debug, Clone)]
 struct Service {
     agent: Arc<Mutex<Agent>>,
+    memory_queue: mpsc::Sender<Vec<Message>>,
 }
 
 #[tool(tool_box)]
 impl Service {
-    pub fn new(agent: Agent) -> Self { Self { agent: Arc::new(Mutex::new(agent)) } }
+    pub fn new(agent: Agent, memory_queue: mpsc::Sender<Vec<Message>>) -> Self {
+        Self { agent: Arc::new(Mutex::new(agent)), memory_queue }
+    }
 
     #[tool(
         description = r#"
@@ -279,8 +331,22 @@ This tool is ideal for finding specific information about staff members, includi
     pub async fn ask_staff_expert(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
+
+        let memory_query_args = serde_json::json!({ "query_text": question.question, "top_k": 5 });
+        let initial_memory_result = match get_memories(memory_query_args).await {
+            Ok(memories) => memories,
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())]))            
+        };
+        agent.history.push(Message::tool(initial_memory_result, "query_memory"));
+
         let resp = agent.invoke(question.question).await;
-        let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
+
+        let final_history = agent.history.clone();
+        if let Err(e) = self.memory_queue.send(final_history).await {
+            eprintln!("[ERROR] Failed to send history to memory queue: {}", e);
+        }
+
+        // let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
         Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }
 }
@@ -301,7 +367,7 @@ impl ServerHandler for Service {
 
 
 async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
-    let transport = SseClientTransport::start("http://localhost:8000/sse").await?;
+    let transport = SseClientTransport::start(SCRAPER_MCP_URL).await?;
     let client_info: rmcp::model::InitializeRequestParam = ClientInfo {
         protocol_version: Default::default(),
         capabilities: ClientCapabilities::default(),
@@ -332,6 +398,40 @@ async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
     
     Ok(content)
 }
+
+async fn get_memories(arguments: serde_json::Value) -> Result<String> {
+    let transport = SseClientTransport::start(MEMORY_MCP_URL).await?;
+    let client_info: rmcp::model::InitializeRequestParam = ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: "test sse client".to_string(),
+            version: "0.0.1".to_string(),
+        },
+    };
+    let client = client_info
+        .serve(transport)
+        .await
+        .inspect_err(|e| {
+            println!("client error: {:?}", e);
+    })?;
+
+    let tool_result = client
+        .clone()
+        .call_tool(CallToolRequestParam {
+            name: "query_memory".into(),
+            arguments: serde_json::json!(arguments).as_object().cloned(),
+        })
+        .await?;
+
+    let mut content = "".into();
+    for tool_result_content in tool_result.content {
+        content = format!("{}\n{}", content, tool_result_content.as_text().unwrap().text)
+    }
+    
+    Ok(content)
+}
+
 
 pub fn staff_html_to_markdown(html: &str) -> HashMap<String, String> {
     let doc     = Html::parse_document(html);

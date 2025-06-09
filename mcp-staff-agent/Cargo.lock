@@ -1366,7 +1366,7 @@ dependencies = [
 [[package]]
 name = "reagent"
 version = "0.1.0"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#5c02e8f63b628108ee083daef4390db7b62a56c7"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#ae1eaac444a6580f980cb77995f96afff21e15e8"
 dependencies = [
  "reqwest",
  "rmcp",
@@ -1497,7 +1497,7 @@ dependencies = [
 [[package]]
 name = "rmcp"
 version = "0.1.5"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#a66f66ae345a0fafde1e2ee496ec137d77aef82a"
+source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#db03f63e76b5b32f65d34a1bd08ae56dab595f60"
 dependencies = [
  "axum",
  "base64",
@@ -1529,7 +1529,7 @@ dependencies = [
 [[package]]
 name = "rmcp-macros"
 version = "0.1.5"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#a66f66ae345a0fafde1e2ee496ec137d77aef82a"
+source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#db03f63e76b5b32f65d34a1bd08ae56dab595f60"
 dependencies = [
  "proc-macro2",
  "quote",
