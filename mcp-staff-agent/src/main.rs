@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::format, sync::Arc};
 
 use reagent::{init_default_tracing, Agent, AgentBuilder, AsyncToolFn, McpServerType, Message, ToolBuilder, ToolExecutionError, Value};
 use rmcp::{
@@ -28,77 +28,18 @@ async fn main() -> Result<()> {
     let (tx, mut rx) = mpsc::channel::<Vec<Message>>(32); 
 
     let memory_storage_agent_prompt = r#"
-You are a meticulous librarian agent. Your sole purpose is to analyze conversation summaries, identify important new facts, and save them to long-term memory, ensuring no duplicates are created.
+    You are a meticulous librarian agent. Your sole purpose is to analyze conversation summaries and store new, important facts without creating duplicates.
 
-────────────────────────────────────────────────────────
-1. CORE DIRECTIVE
-- Your only goal is to accurately identify and store **new, lasting facts**.
-- Your thinking process is important, but your final output should only be tool calls or a brief completion message.
+    You will be given tasks sequentially. Follow each instruction precisely using the principles below.
 
-────────────────────────────────────────────────────────
-2. RULES FOR IDENTIFYING FACTS
+    ### Core Principles:
 
-- **DO Store:** Specific, objective, and lasting information. (e.g., "Domen Vake teaches Programming III.")
-- **DO NOT Store:** Conversational filler, user questions, temporary information, or vague statements. Duplicate information!
+    * **Be Selective:** Only identify or store facts that are specific, objective, and lasting (e.g., "Domen Vake teaches Programming III."). Do not process conversational filler, questions, or temporary information.
+    * **Prevent Duplicates:** This is your most important rule. You must **never** store a fact if it is already in the long-term memory.
 
-────────────────────────────────────────────────────────
-3. MANDATORY ITERATIVE WORKFLOW
-You must follow this exact, iterative process for every conversation summary you receive:
+    ### Your Task:
 
-1.  **Analyze & Identify:** Read the entire summary and internally create a list of all potential new facts that meet the criteria in §2.
-
-2.  **Verification & Storage Loop:** For **each individual potential fact** on your list, you must perform the following complete sub-routine before moving to the next fact:
-    
-    a. **Query:** Call the `query_memory` tool using the text of the *single potential fact* as the `query_text`.
-    
-    b. **Think & Decide:** After you get the results from `query_memory`. Your think process must be:
-        i. State the potential fact you are considering.
-        ii. State the results from the `query_memory` call.
-        iii. State your conclusion: whether the fact is new or a duplicate.
-        iv. State your decision: to call `store_memory` or to do nothing.
-    
-    c. **Act:** Based on your decision in the `<think>` block, either call `store_memory` or do nothing and move to the next potential fact.
-
-────────────────────────────────────────────────────────
-4. EXAMPLE OF A FULL think PROCESS
-
-This is the exact format you must follow.
-
-**EXAMPLE 1: Fact is a duplicate**
-
-<think>
-I am considering the potential fact: "Dr. Niki Hrovatin teaches Programiranje I."
-I will call `query_memory` to check for duplicates.
-</think>
-**(...you call query_memory({ "query_text": "Dr. Niki Hrovatin teaches Programiranje I." }) and get a result...)**
-
-<think>
-The `query_memory` tool returned: `["Dr. Niki Hrovatin teaches Programiranje I (Introduction to Programming)"]`.
-My analysis is that this fact is already in the memory.
-My decision is to **NOT** call `store_memory`. I will now move to the next potential fact.
-</think>
-
-**EXAMPLE 2: Fact is new**
-
-<think>
-I am considering the potential fact: "Dr. Niki Hrovatin's office is FAMNIT-VP-3."
-I will call `query_memory` to check for duplicates.
-</think>
-**(...you call query_memory({ "query_text": "Dr. Niki Hrovatin's office is FAMNIT-VP-3." }) and get an empty result...)**
-
-<think>
-The `query_memory` tool returned no relevant results.
-My analysis is that this fact is new and should be stored.
-My decision is to call `store_memory`.
-</think>
-**(...you call store_memory({ "memory": "Dr. Niki Hrovatin's office is FAMNIT-VP-3." })...)**
-
-────────────────────────────────────────────────────────
-5. COMPLETION
-After you have iterated through **all** potential facts, your task is complete. Output a brief summary, like "Processing complete. Stored 1 new fact and ignored 3 duplicates."
-
-REMINDER:
-- DUPLICATE INFORMATION SHOULD NEVER BE STORED IN THE MEMORY
+    Your current task is described in the user's prompt. Execute it according to the principles and tool protocols defined above.
 
     "#;
 
@@ -150,11 +91,29 @@ REMINDER:
     tokio::spawn(async move {
         while let Some(history) = rx.recv().await {
             let mut agent = (*memory_storage_agent).clone();
+            let tools = agent.tools;
+            agent.tools = None;
             agent.clear_history();
 
             let memory_prompt = history_to_memory_prompt(history);
-            
-            let _ = agent.invoke(&memory_prompt).await;
+
+            let _ = agent.invoke(&format!("{}\n\n---\n\nYour first task is to \
+            identify all potential memories and nothing else. Please write a list of \
+            memoris that might be usefull at some time in the future.", memory_prompt)).await;
+
+            agent.tools = tools;
+
+            let _ = agent.invoke("For each potential memory, check if it \
+            already exists in the long term memory storage using the query_memory \
+            tool. For each one determine wether it already exists and is duplicate \
+            or wether it should be stored.").await;
+
+            let _ = agent.invoke("Store the memories you determined to be \
+            correct for storage. It is extremely important that the memories stored are \
+            not duplicates. If the memory was seen in the query_memory tool response \
+            it shoud NOT be stored again. Your main task is to not duplicate information \
+            but only store new, never seen before facts.").await;
+
             println!("[Memory Task]: Finished processing a conversation history.");
         }
     });
@@ -277,7 +236,6 @@ REMINDER:
         .add_tool(staff_profiles_tool)
         .add_tool(similar_names_tool)
         // .set_stop_prompt(stop_prompt)
-        .strip_thinking(false)
         .build()
         .await?;
 

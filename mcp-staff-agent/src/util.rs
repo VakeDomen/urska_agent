@@ -55,7 +55,7 @@ fn cosine_sim(a: &HashMap<String, usize>, b: &HashMap<String, usize>) -> f64 {
 
 /// New helper function to serialize a conversation history into a single prompt for the memory agent.
 pub fn history_to_memory_prompt(history: Vec<Message>) -> String {
-    let mut prompt = String::from("Here is a summary of a conversation. Please analyze it for new facts to store in memory:\n\n---\n\n");
+    let mut prompt = String::from("Here is a summary of a conversation.");
     for msg in history.iter().skip(2) { // Skip the system prompt and the initial memory query result
         let content = msg.content.clone().unwrap_or_default();
         match msg.role {
