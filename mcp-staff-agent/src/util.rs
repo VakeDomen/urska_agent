@@ -1,6 +1,10 @@
 use std::collections::HashMap;
-
+use anyhow::Result;
 use reagent::{Message, Role};
+use rmcp::{model::{CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation}, transport::SseClientTransport, ServiceExt};
+use scraper::{Html, Selector};
+
+use crate::{MEMORY_MCP_URL, SCRAPER_MCP_URL};
 
 pub fn rank_names(mut names: Vec<String>, query: &str) -> Vec<String> {
     // Pre-compute the query vector once
@@ -73,3 +77,125 @@ pub fn history_to_memory_prompt(history: Vec<Message>) -> String {
     println!("CONVO: {}", prompt);
     prompt
 }
+
+
+
+pub async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
+    let transport = SseClientTransport::start(SCRAPER_MCP_URL).await?;
+    let client_info: rmcp::model::InitializeRequestParam = ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: "test sse client".to_string(),
+            version: "0.0.1".to_string(),
+        },
+    };
+    let client = client_info
+        .serve(transport)
+        .await
+        .inspect_err(|e| {
+            println!("client error: {:?}", e);
+    })?;
+
+    let tool_result = client
+        .clone()
+        .call_tool(CallToolRequestParam {
+            name: "get_web_page_content".into(),
+            arguments: serde_json::json!({"url": url.into()}).as_object().cloned(),
+        })
+        .await?;
+
+    let mut content = "".into();
+    for tool_result_content in tool_result.content {
+        content = format!("{}\n{}", content, tool_result_content.as_text().unwrap().text)
+    }
+    
+    Ok(content)
+}
+
+pub async fn get_memories(arguments: serde_json::Value) -> Result<String> {
+    let transport = SseClientTransport::start(MEMORY_MCP_URL).await?;
+    let client_info: rmcp::model::InitializeRequestParam = ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: "test sse client".to_string(),
+            version: "0.0.1".to_string(),
+        },
+    };
+    let client = client_info
+        .serve(transport)
+        .await
+        .inspect_err(|e| {
+            println!("client error: {:?}", e);
+    })?;
+
+    let tool_result = client
+        .clone()
+        .call_tool(CallToolRequestParam {
+            name: "query_memory".into(),
+            arguments: serde_json::json!(arguments).as_object().cloned(),
+        })
+        .await?;
+
+    let mut content = "".into();
+    for tool_result_content in tool_result.content {
+        content = format!("{}\n{}", content, tool_result_content.as_text().unwrap().text)
+    }
+    
+    Ok(content)
+}
+
+
+pub fn staff_html_to_markdown(html: &str) -> HashMap<String, String> {
+    let doc     = Html::parse_document(html);
+    let row_sel = Selector::parse("#osebje-list tr").unwrap();
+    let td_sel  = Selector::parse("td").unwrap();
+    let a_sel   = Selector::parse("a").unwrap();
+
+    let mut out = Vec::new();
+    let mut names = HashMap::new();
+    for row in doc.select(&row_sel) {
+        // skip the header row (contains <th> instead of <td>)
+        if row.select(&Selector::parse("th").unwrap()).next().is_some() {
+            continue;
+        }
+
+        let tds: Vec<_> = row.select(&td_sel).collect();
+        if tds.len() < 5 { continue; }
+
+        // helpers ----------------------------------------------------------
+        let txt = |el: Option<&scraper::ElementRef>| -> String {
+            el.map(|e| e.text().collect::<String>().trim().to_owned()).unwrap_or_default()
+        };
+        let href = |el: Option<&scraper::ElementRef>| -> String {
+            el.and_then(|e| e.value().attr("href")).unwrap_or("").to_owned()
+        };
+
+        // extract fields ----------------------------------------------------
+        let surname_a  = tds[0].select(&a_sel).next();
+        let given_a    = tds[1].select(&a_sel).next();
+        let email_a    = tds[3].select(&a_sel).next();
+        let website_a  = tds[4].select(&a_sel).next();
+
+        let surname     = txt(surname_a.as_ref());
+        let given       = txt(given_a.as_ref());
+        let _phone       = tds[2].text().collect::<String>().trim().to_owned();
+        let _email       = txt(email_a.as_ref());
+        let profile_url = href(surname_a.as_ref());
+        let _website_url = href(website_a.as_ref());
+
+        // build the markdown bullet ----------------------------------------
+        let mut line = format!("- **{} {}**", surname, given);
+        // if !email.is_empty()       { line += &format!(" • {}", email); }
+        // if !phone.is_empty()       { line += &format!(" • {}", phone); }
+        if !profile_url.is_empty() { line += &format!(" • [Profile]({})", profile_url); }
+        // if !website_url.is_empty() { line += &format!(" • [Site]({})",    website_url); }
+        names.insert(format!("{} {}", given, surname), profile_url);
+        out.push(line);
+    }
+
+    names
+}
+
+
