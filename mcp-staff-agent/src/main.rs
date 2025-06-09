@@ -1,15 +1,22 @@
-use std::{collections::HashMap, fmt::format, sync::Arc};
+use std::sync::Arc;
 
-use reagent::{init_default_tracing, Agent, AgentBuilder, AsyncToolFn, McpServerType, Message, ToolBuilder, ToolExecutionError, Value};
+use reagent::{init_default_tracing, Agent, Message};
 use rmcp::{
-    model::{CallToolRequestParam, CallToolResult, ClientCapabilities, ClientInfo, Content, Implementation, ServerCapabilities, ServerInfo}, schemars, tool, transport::{SseClientTransport, SseServer}, ServerHandler, ServiceExt
+    model::{CallToolResult,Content, ServerCapabilities, ServerInfo}, 
+    schemars, 
+    tool, 
+    transport::SseServer, 
+    ServerHandler
 };
 use anyhow::Result;
-use scraper::{Html, Selector};
 use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
 
-use crate::{memory_store_agent::init_memory_store_agent, profile::StaffProfile, staff_agent::init_staff_agent, util::{get_memories, history_to_memory_prompt, rank_names}};
+use crate::{
+    memory_store_agent::init_memory_store_agent, 
+    staff_agent::init_staff_agent, 
+    util::{get_memories, history_to_memory_prompt}
+};
 
 mod profile;
 mod util;

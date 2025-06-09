@@ -22,7 +22,7 @@ pub struct StaffProfile {
     pub teaching_en: Vec<String>,
     pub coordinator_sl: Vec<String>,
     pub coordinator_en: Vec<String>,
-    pub photo_url: Option<String>,
+    pub _photo_url: Option<String>,
 }
 
 impl From<String> for StaffProfile {
@@ -73,7 +73,7 @@ impl From<String> for StaffProfile {
         let phone         = first_text("td.phone");
         let email         = first_text("td.email a");
         let website       = attr("td.website a", "href");
-        let photo_url     = attr("img.person-img-pedagoska", "src");
+        let _photo_url     = attr("img.person-img-pedagoska", "src");
 
         // department (two <div class="field"> nodes, SLO → ENG)
         let binding = Selector::parse("td.departments .field").unwrap();
@@ -147,7 +147,7 @@ impl From<String> for StaffProfile {
             teaching_en,
             coordinator_sl,
             coordinator_en,
-            photo_url,
+            _photo_url,
         }
     }
 }
