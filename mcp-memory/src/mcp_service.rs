@@ -3,6 +3,8 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use rmcp::model::{Implementation, ProtocolVersion};
+use rmcp::service::NotificationContext;
+use rmcp::RoleServer;
 use rmcp::{
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, ServerHandler,
@@ -148,6 +150,14 @@ impl ServerHandler for MemoryMcpService {
                 Use the 'query_memory' tool to retrieve information from memory using a natural language query; it performs a semantic search to find the most relevant stored memories.".to_string()
             ),
         }
+    }
+    
+    fn on_initialized(
+        &self,
+        context: NotificationContext<RoleServer>,
+    ) -> impl Future<Output = ()> + Send + '_ {
+        println!("client initialized");
+        std::future::ready(())
     }
 
 }

@@ -65,7 +65,8 @@ async fn main() -> Result<()> {
         }
     });
 
-    let ct = sse_server.with_service(move || MemoryMcpService::new(app_state.clone()));
+    let ct = sse_server
+        .with_service(move || MemoryMcpService::new(app_state.clone()));
     // let ct = sse_server.with_service(move || Counter::new());
 
     tokio::signal::ctrl_c().await?;
