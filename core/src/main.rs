@@ -2,7 +2,7 @@ use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use reagent::{init_default_tracing, Agent, AgentBuilder, McpServerType};
 use rmcp::{
-    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id, SseServer}, RoleServer, ServerHandler
+    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id, SseServer}, Peer, RoleServer, ServerHandler
 };
 use anyhow::Result;
 use serde::{de::IntoDeserializer, Deserialize};
@@ -164,11 +164,32 @@ impl Service {
     }
 
     #[tool(description = "Ask Urška a general question about UP FAMNIT. She will route it to the correct expert.")]
-    pub async fn ask_urska(&self, Parameters(question): Parameters<StructRequest>) -> Result<CallToolResult, rmcp::Error> {
+    pub async fn ask_urska(
+        &self, 
+        Parameters(question): Parameters<StructRequest>,
+        client: Peer<RoleServer>,
+        meta: Meta
+    ) -> Result<CallToolResult, rmcp::Error> {
         let start = SystemTime::now();
         let mut agent = self.agent.lock().await;
         println!("Answering query: {}", question.question);
-
+        // let progress_token = meta
+        //     .get_progress_token()
+        //     .ok_or(rmcp::Error::invalid_params(
+        //         "Progress token is required for this tool",
+        //         None,
+        //     ))?;
+        // for step in 0..10 {
+        //     let _ = client
+        //         .notify_progress(ProgressNotificationParam {
+        //             progress_token: progress_token.clone(),
+        //             progress: step,
+        //             total: Some(10),
+        //             message: Some("Some message".into()),
+        //         })
+        //         .await;
+        //     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // }
         let resp = agent.invoke(question.question.clone()).await;
         let file_name = format!("{}_conversation.json", self.id);
         let _ = agent.save_history(file_name);

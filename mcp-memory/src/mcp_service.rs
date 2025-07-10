@@ -2,9 +2,10 @@ use std::fmt;
 // src/mcp_service.rs
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
+use rmcp::handler::server::tool::{Parameters, ToolRouter};
 use rmcp::model::{Implementation, ProtocolVersion};
 use rmcp::service::NotificationContext;
-use rmcp::RoleServer;
+use rmcp::{tool_handler, tool_router, RoleServer};
 use rmcp::{
     model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, ServerHandler,
@@ -59,21 +60,22 @@ impl fmt::Display for AppState {
 #[derive(Debug, Clone)]
 pub struct MemoryMcpService {
     state: Arc<AppState>,
+    tool_router: ToolRouter<MemoryMcpService>
 }
 
 // Implement the tools
-#[tool(tool_box)]
+#[tool_router]
 impl MemoryMcpService {
     pub fn new(state: Arc<AppState>) -> Self {
         println!("MemoryMcpService instance created.");
-        Self { state }
+        Self { state, tool_router: Self::tool_router() }
     }
 
 
     #[tool(description = "Stores a memory into the agent's long-term memory. Use this to remember facts, details, or context for future recall. Provide the 'memory' to remember.")]
     pub async fn store_memory(
         &self,
-        #[tool(aggr)] params: AddMemoryParams,
+        Parameters(params): Parameters<AddMemoryParams>,
     ) -> Result<CallToolResult, rmcp::Error> {
         println!("Tool 'store_memory' called with text: {:.20}...", params.memory);
         let mut memory_item = MemoryItem::new(params.memory.clone());
@@ -113,7 +115,7 @@ impl MemoryMcpService {
     #[tool(description = "Retrieves relevant memories from the agent's long-term memory based on a natural language query. It uses semantic search to find information that is contextually similar to your query. Provide 'query_text' for your search. Optionally, specify 'top_k' for the number of results (default is 5).")]
     pub async fn query_memory(
         &self,
-        #[tool(aggr)] params: QueryMemoryParams,
+        Parameters(params): Parameters<QueryMemoryParams>,
     ) -> Result<CallToolResult, rmcp::Error> {
         println!("Tool 'query_memory' called with query: {:.20}...", params.query_text);
         // 1. Get embedding for the query text
@@ -135,7 +137,7 @@ impl MemoryMcpService {
 }
 
 // Implement ServerHandler to provide server information
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for MemoryMcpService {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {

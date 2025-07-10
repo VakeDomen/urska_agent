@@ -26,7 +26,7 @@ impl MemoryItem {
 
 // --- Tool Parameters and Responses ---
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Deserialize, schemars::JsonSchema, Clone)]
 pub struct AddMemoryParams {
     pub memory: String,
 }

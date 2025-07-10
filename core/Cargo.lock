@@ -1402,7 +1402,7 @@ dependencies = [
 [[package]]
 name = "reagent"
 version = "0.1.0"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#6db7b7545fc91515558bf3f5d1f97f6a217322fb"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#881dfeb9438e378166f1861e01ecb109ac4d0f92"
 dependencies = [
  "reqwest",
  "rmcp 0.2.1 (git+https://github.com/modelcontextprotocol/rust-sdk?branch=main)",

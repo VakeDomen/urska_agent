@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = {version = "1.0.98" }
 reqwest = { version = "0.12.15", features = ["blocking"] }
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+rmcp = { version = "0.2", features = [
     "server", 
     "transport-sse-server",
     "client", 
