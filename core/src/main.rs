@@ -2,7 +2,7 @@ use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use reagent::{init_default_tracing, Agent, AgentBuilder, McpServerType};
 use rmcp::{
-    handler::server::tool::ToolCallContext, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, transport::{common::server_side_http::session_id, SseServer}, RoleServer, ServerHandler
+    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id, SseServer}, RoleServer, ServerHandler
 };
 use anyhow::Result;
 use serde::{de::IntoDeserializer, Deserialize};
@@ -149,51 +149,25 @@ pub struct StructRequest {
 struct Service {
     id: String,
     agent: Arc<Mutex<Agent>>,
+    tool_router: ToolRouter<Service>,
 }
 
-#[tool(tool_box)]
+#[tool_router]
 impl Service {
     pub fn new(agent: Agent, conn_counter: Arc<AtomicI32>) -> Self { 
         let num = conn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self { agent: Arc::new(Mutex::new(agent)), id: format!("{num}") } 
+        Self { 
+            agent: Arc::new(Mutex::new(agent)), 
+            id: format!("{num}") ,
+            tool_router: Self::tool_router(),
+        } 
     }
 
     #[tool(description = "Ask Urška a general question about UP FAMNIT. She will route it to the correct expert.")]
-    pub async fn ask_urska(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
+    pub async fn ask_urska(&self, Parameters(question): Parameters<StructRequest>) -> Result<CallToolResult, rmcp::Error> {
         let start = SystemTime::now();
         let mut agent = self.agent.lock().await;
         println!("Answering query: {}", question.question);
-
-        let peers =  CLIENT_PEERS.read().await;
-        let peer = peers.get(&self.id).unwrap();
-        println!("Talking to peer: {:#?}", peer);
-        let a = peer.send_notification(ServerNotification::ProgressNotification(ProgressNotification { 
-            method: ProgressNotificationMethod, 
-            params: ProgressNotificationParam { 
-                progress_token: ProgressToken(NumberOrString::String(self.id.clone().into())), 
-                progress: 1, 
-                total: Some(1), 
-                message: Some("Answering query".into()) 
-            }, 
-            extensions: Extensions::default(), 
-        })).await;
-            
-        let a = peer.send_notification(rmcp::model::ServerNotification::CancelledNotification(CancelledNotification {
-            params: CancelledNotificationParam {
-                request_id: rmcp::model::NumberOrString::String(self.id.clone().into()),
-                reason: Some("Dreks".into()),
-            },
-            method: CancelledNotificationMethod,
-            extensions: Default::default(),
-        })).await;
-
-        // ProgressNotificationParam { 
-        //     progress_token: ProgressToken(rmcp::model::NumberOrString::String(question.question.clone().into())), 
-        //     progress: 1, 
-        //     total: Some(2), 
-        //     message: Some("Hello notification".into()) 
-        // }
-        println!("Notification: {:#?}", a);
 
         let resp = agent.invoke(question.question.clone()).await;
         let file_name = format!("{}_conversation.json", self.id);
@@ -203,28 +177,13 @@ impl Service {
     }
 }
 
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for Service {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some("This is Urška, a router agent for questions about UP FAMNIT.".into()),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
-        }
-    }
-
-    fn on_initialized(
-        &self,
-        context: NotificationContext<RoleServer>,
-    ) -> impl Future<Output = ()> + Send + '_ {
-        
-        println!("NEW INSTANCEEE {:?}", context);
-
-        async move {
-            CLIENT_PEERS
-                .write()
-                .await   
-                .insert(self.id.clone(), context.peer);
         }
     }
 }
