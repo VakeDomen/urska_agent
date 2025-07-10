@@ -2,11 +2,7 @@ use std::sync::Arc;
 
 use reagent::{init_default_tracing, Agent, Message};
 use rmcp::{
-    model::{CallToolResult,Content, ServerCapabilities, ServerInfo}, 
-    schemars, 
-    tool, 
-    transport::SseServer, 
-    ServerHandler
+    handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult,Content, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::SseServer, ServerHandler
 };
 use anyhow::Result;
 use serde::Deserialize;
@@ -88,12 +84,17 @@ pub struct StructRequest {
 struct Service {
     agent: Arc<Mutex<Agent>>,
     memory_queue: mpsc::Sender<Vec<Message>>,
+    tool_router: ToolRouter<Service>
 }
 
-#[tool(tool_box)]
+#[tool_router]
 impl Service {
     pub fn new(agent: Agent, memory_queue: mpsc::Sender<Vec<Message>>) -> Self {
-        Self { agent: Arc::new(Mutex::new(agent)), memory_queue }
+        Self { 
+            agent: Arc::new(Mutex::new(agent)), 
+            memory_queue,
+            tool_router: Self::tool_router()
+        }
     }
 
     #[tool(
@@ -113,7 +114,7 @@ impl Service {
         - "What is the office location and phone number for dr. Branko Kavšek?"
         "#
     )]
-    pub async fn ask_staff_expert(&self, #[tool(aggr)] question: StructRequest) -> Result<CallToolResult, rmcp::Error> {
+    pub async fn ask_staff_expert(&self, Parameters(question): Parameters<StructRequest>) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
 
@@ -136,7 +137,7 @@ impl Service {
     }
 }
 
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for Service {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
