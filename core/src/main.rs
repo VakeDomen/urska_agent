@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
+use std::{fmt::format, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use reagent::{init_default_tracing, Agent, AgentBuilder, McpServerType};
 use rmcp::{
@@ -193,24 +193,30 @@ impl Service {
     ) -> Result<CallToolResult, rmcp::Error> {
         let start = SystemTime::now();
         let mut agent = self.agent.lock().await;
+        let mut notification_channel = agent.new_notification_channel();
+
+        tokio::spawn(async move {
+            if let Ok(progress_token) =  meta
+                .get_progress_token()
+                .ok_or(rmcp::Error::invalid_params(
+                    "Progress token is required for this tool",
+                    None,
+                )) {
+                    let mut step = 1;
+                    while let Some(notification) = notification_channel.recv().await {
+                        let _ = client
+                            .notify_progress(ProgressNotificationParam {
+                                progress_token: progress_token.clone(),
+                                progress: step,
+                                total: None,
+                                message: Some(format!("{:#?}", notification)),
+                            })
+                            .await;
+                        step += 1;
+                    }
+            }
+        });
         println!("Answering query: {}", question.question);
-        // let progress_token = meta
-        //     .get_progress_token()
-        //     .ok_or(rmcp::Error::invalid_params(
-        //         "Progress token is required for this tool",
-        //         None,
-        //     ))?;
-        // for step in 0..10 {
-        //     let _ = client
-        //         .notify_progress(ProgressNotificationParam {
-        //             progress_token: progress_token.clone(),
-        //             progress: step,
-        //             total: Some(10),
-        //             message: Some("Some message".into()),
-        //         })
-        //         .await;
-        //     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        // }
         let resp = agent.invoke(question.question.clone()).await;
         let file_name = format!("{}_conversation.json", self.id);
         let _ = agent.save_history(file_name);
