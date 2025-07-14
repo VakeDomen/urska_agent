@@ -2,7 +2,7 @@ use std::sync::{Arc};
 
 use anyhow::Result;
 use reagent::{init_default_tracing, Agent, Message};
-use rmcp::{handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::SseServer, ServerHandler};
+use rmcp::{handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::SseServer, Peer, RoleServer, ServerHandler};
 use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
 
@@ -111,9 +111,37 @@ This tool is ideal for answering specific questions about undergraduate, master'
 - "What are the main goals of the doctoral programme in Mathematical Sciences?"
 "#
     )]
-    pub async fn ask_programme_expert(&self, Parameters(question): Parameters<StructRequest>) -> Result<CallToolResult, rmcp::Error> {
+    pub async fn ask_programme_expert(
+        &self, 
+        Parameters(question): Parameters<StructRequest>,
+        client: Peer<RoleServer>,
+        meta: Meta
+    ) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
+        let mut notification_channel = agent.new_notification_channel();
+
+        tokio::spawn(async move {
+            if let Ok(progress_token) =  meta
+                .get_progress_token()
+                .ok_or(rmcp::Error::invalid_params(
+                    "Progress token is required for this tool",
+                    None,
+                )) {
+                    let mut step = 1;
+                    while let Some(notification) = notification_channel.recv().await {
+                        let _ = client
+                            .notify_progress(ProgressNotificationParam {
+                                progress_token: progress_token.clone(),
+                                progress: step,
+                                total: None,
+                                message: serde_json::to_string(&notification).ok(),
+                            })
+                            .await;
+                        step += 1;
+                    }
+            }
+        });
 
         let memory_query_args = serde_json::json!({ "query_text": question.question, "top_k": 5 });
         let initial_memory_result = match get_memories(memory_query_args).await {

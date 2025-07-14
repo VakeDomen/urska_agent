@@ -2,16 +2,14 @@ use std::sync::Arc;
 
 use reagent::{init_default_tracing, Agent, Message};
 use rmcp::{
-    handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult,Content, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::SseServer, ServerHandler
+    handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::SseServer, Peer, RoleServer, ServerHandler
 };
 use anyhow::Result;
 use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::{
-    memory_store_agent::init_memory_store_agent, 
-    staff_agent::init_staff_agent, 
-    util::{get_memories, history_to_memory_prompt}
+    memory_store_agent::init_memory_store_agent, profile::StaffProfile, staff_agent::init_staff_agent, util::{get_memories, get_page, history_to_memory_prompt, staff_html_to_markdown}
 };
 
 mod profile;
@@ -80,6 +78,13 @@ pub struct StructRequest {
 }
 
 
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ProfileRequest {
+    pub name: String,
+}
+
+
 #[derive(Debug, Clone)]
 struct Service {
     agent: Arc<Mutex<Agent>>,
@@ -99,6 +104,50 @@ impl Service {
 
     #[tool(
         description = r#"
+        Given a name, provides a profile of employees/staff
+        "#
+    )]
+    pub async fn get_staff_profile(
+        &self, 
+        Parameters(prof): Parameters<ProfileRequest>,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let staff_list_result = get_page("https://www.famnit.upr.si/en/about-faculty/staff/").await;
+        let all_staff = match staff_list_result {
+            Ok(staff_list) => staff_html_to_markdown(&staff_list),
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])) 
+        };
+        let names = all_staff
+            .clone()
+            .keys()
+            .map(|k| k.to_string())
+            .collect::<Vec<String>>();
+        let top_names = crate::util::rank_names(names, &prof.name)[0..1 as usize].to_vec();
+
+        let mut result = "# Profiles \n\n ---\n\n".to_string();
+
+        for name in top_names {
+            let profile_page_link = all_staff.get(&name);
+            if profile_page_link.is_none() {
+                continue;
+            }
+            let profile_page_link = profile_page_link.unwrap();
+            let profile_page = get_page(profile_page_link).await;
+
+            if profile_page.is_err() {
+                continue;
+            }
+            let profile_page = profile_page.unwrap();
+            let profile = StaffProfile::from(profile_page);
+
+            result = format!("{} \n\n --- \n\n {}", result, profile.to_string());
+
+        }
+        // let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
+        Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    #[tool(
+        description = r#"
         Use this tool to ask an expert agent about employees at the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
 
         This tool is ideal for finding specific information about staff members, including their office location, phone number, email address, department, research fields, and the courses they teach.
@@ -114,9 +163,38 @@ impl Service {
         - "What is the office location and phone number for dr. Branko Kavšek?"
         "#
     )]
-    pub async fn ask_staff_expert(&self, Parameters(question): Parameters<StructRequest>) -> Result<CallToolResult, rmcp::Error> {
+    pub async fn ask_staff_expert(
+        &self, 
+        Parameters(question): Parameters<StructRequest>,
+        client: Peer<RoleServer>,
+        meta: Meta
+    ) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
+        let mut notification_channel = agent.new_notification_channel();
+
+        tokio::spawn(async move {
+            if let Ok(progress_token) =  meta
+                .get_progress_token()
+                .ok_or(rmcp::Error::invalid_params(
+                    "Progress token is required for this tool",
+                    None,
+                )) {
+                    let mut step = 1;
+                    while let Some(notification) = notification_channel.recv().await {
+                        let _ = client
+                            .notify_progress(ProgressNotificationParam {
+                                progress_token: progress_token.clone(),
+                                progress: step,
+                                total: None,
+                                message: serde_json::to_string(&notification).ok(),
+                            })
+                            .await;
+                        step += 1;
+                    }
+            }
+        });
+        
 
         let memory_query_args = serde_json::json!({ "query_text": question.question, "top_k": 5 });
         let initial_memory_result = match get_memories(memory_query_args).await {

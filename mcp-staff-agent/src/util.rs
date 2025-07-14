@@ -14,8 +14,8 @@ pub fn rank_names(mut names: Vec<String>, query: &str) -> Vec<String> {
         let sim_a = cosine_sim(&trigram_vec(&a.to_lowercase()), &q_vec);
         let sim_b = cosine_sim(&trigram_vec(&b.to_lowercase()), &q_vec);
         // higher similarity ⇒ earlier in list
-        sim_b
-            .partial_cmp(&sim_a)
+        sim_a
+            .partial_cmp(&sim_b)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     names

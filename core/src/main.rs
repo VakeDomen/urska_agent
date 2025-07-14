@@ -209,7 +209,7 @@ impl Service {
                                 progress_token: progress_token.clone(),
                                 progress: step,
                                 total: None,
-                                message: Some(format!("{:#?}", notification)),
+                                message: serde_json::to_string(&notification).ok(),
                             })
                             .await;
                         step += 1;

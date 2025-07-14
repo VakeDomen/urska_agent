@@ -1401,11 +1401,11 @@ dependencies = [
 
 [[package]]
 name = "reagent"
-version = "0.1.0"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#2f2533472289c6ed5ca80c9b8b530a9e40591814"
+version = "0.1.1"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#bbb979c2baab279c4d9788aed448ab1b4f1932e6"
 dependencies = [
  "reqwest",
- "rmcp 0.2.1 (git+https://github.com/modelcontextprotocol/rust-sdk?branch=main)",
+ "rmcp",
  "serde",
  "serde_json",
  "tokio",
@@ -1546,9 +1546,10 @@ dependencies = [
  "http-body-util",
  "paste",
  "pin-project-lite",
+ "process-wrap",
  "rand 0.9.1",
  "reqwest",
- "rmcp-macros 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rmcp-macros",
  "schemars",
  "serde",
  "serde_json",
@@ -1563,48 +1564,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "rmcp"
-version = "0.2.1"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#e615300feae62a01f90f40fc7711ab15c3f0a88c"
-dependencies = [
- "base64",
- "chrono",
- "futures",
- "http",
- "paste",
- "pin-project-lite",
- "process-wrap",
- "reqwest",
- "rmcp-macros 0.2.1 (git+https://github.com/modelcontextprotocol/rust-sdk?branch=main)",
- "schemars",
- "serde",
- "serde_json",
- "sse-stream",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower-service",
- "tracing",
-]
-
-[[package]]
 name = "rmcp-macros"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72398e694b9f6dbb5de960cf158c8699e6a1854cb5bbaac7de0646b2005763c4"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "serde_json",
- "syn",
-]
-
-[[package]]
-name = "rmcp-macros"
-version = "0.2.1"
-source = "git+https://github.com/modelcontextprotocol/rust-sdk?branch=main#e615300feae62a01f90f40fc7711ab15c3f0a88c"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -2336,7 +2299,7 @@ dependencies = [
  "html-escape",
  "reagent",
  "reqwest",
- "rmcp 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rmcp",
  "schemars",
  "scraper",
  "serde",
