@@ -1,0 +1,21 @@
+:host {
+  display: block;
+  height: 100vh;
+  background: var(--background-color);
+  color: var(--text-color);
+}
+.chat-layout {
+  display: flex;
+  height: 100%;
+}
+.main-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+.toggle-btn {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+}

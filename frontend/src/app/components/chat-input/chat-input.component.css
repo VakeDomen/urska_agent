@@ -1,0 +1,19 @@
+.chat-input {
+  display: flex;
+  padding: 0.5rem;
+  border-top: 1px solid #ccc;
+}
+textarea {
+  flex: 1 1 auto;
+  resize: none;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #ccc;
+  margin-right: 0.5rem;
+}
+button {
+  padding: 0 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}

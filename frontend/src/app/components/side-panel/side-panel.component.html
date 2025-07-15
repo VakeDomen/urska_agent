@@ -1,0 +1,16 @@
+<div class="side-panel" [class.open]="open">
+  <div
+    class="notification-item"
+    *ngFor="let n of notifications">
+    <div
+      class="preview"
+      (click)="toggle(n)">
+      {{ n.content | slice:0:30 }}…
+    </div>
+    <div
+      class="full"
+      *ngIf="n.expanded">
+      {{ n.content }}
+    </div>
+  </div>
+</div>

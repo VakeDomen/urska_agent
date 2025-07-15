@@ -1,0 +1,16 @@
+
+<h1>🟢 ChatComponent is alive!</h1>
+
+<div class="chat-layout">
+  <button class="toggle-btn" (click)="sideOpen = !sideOpen">
+    Notifications
+  </button>
+  <side-panel
+    [notifications]="notifications"
+    [open]="sideOpen">
+  </side-panel>
+  <div class="main-chat">
+    <message-list [messages]="messages"></message-list>
+    <chat-input (send)="sendPrompt($event)"></chat-input>
+  </div>
+</div>

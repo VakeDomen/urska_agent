@@ -1,0 +1,8 @@
+{
+  "/sse": {
+    "target": "http://localhost:8004",
+    "secure": false,
+    "changeOrigin": true,
+    "logLevel": "debug"
+  }
+}
