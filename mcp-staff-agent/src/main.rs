@@ -121,8 +121,9 @@ impl Service {
             .keys()
             .map(|k| k.to_string())
             .collect::<Vec<String>>();
-        let top_names = crate::util::rank_names(names, &prof.name)[0..1 as usize].to_vec();
 
+        let top_names = crate::util::rank_names(names, &prof.name)[0..1 as usize].to_vec();
+        println!("Top names: {:#?}", top_names);
         let mut result = "# Profiles \n\n ---\n\n".to_string();
 
         for name in top_names {

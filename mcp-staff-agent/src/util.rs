@@ -6,19 +6,41 @@ use scraper::{Html, Selector};
 
 use crate::{MEMORY_MCP_URL, SCRAPER_MCP_URL};
 
-pub fn rank_names(mut names: Vec<String>, query: &str) -> Vec<String> {
-    // Pre-compute the query vector once
-    let q_vec = trigram_vec(&query.to_lowercase());
+pub fn rank_names(names: Vec<String>, query: &str) -> Vec<String> {
+    let normalized_query = normalize_ščćžš(query);
+    let q_vec = trigram_vec(&normalized_query.to_lowercase());
 
-    names.sort_by(|a, b| {
-        let sim_a = cosine_sim(&trigram_vec(&a.to_lowercase()), &q_vec);
-        let sim_b = cosine_sim(&trigram_vec(&b.to_lowercase()), &q_vec);
-        // higher similarity ⇒ earlier in list
-        sim_a
-            .partial_cmp(&sim_b)
+    let mut scored_names: Vec<(String, f64)> = names
+        .into_iter()
+        .map(|original_name| {
+            let normalized_name = normalize_ščćžš(&original_name);
+            let name_vec = trigram_vec(&normalized_name.to_lowercase());
+            let similarity = cosine_sim(&name_vec, &q_vec);
+            (original_name, similarity) // Pair the original name with its score
+        })
+        .collect();
+
+    // 3. Sort the pairs by score (descending) and then by name (ascending) as a tie-breaker.
+    scored_names.sort_by(|(a_name, a_sim), (b_name, b_sim)| {
+        b_sim
+            .partial_cmp(a_sim)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a_name.cmp(b_name))
     });
-    names
+    scored_names.into_iter().map(|(name, _)| name).collect()
+}
+
+fn normalize_ščćžš(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'š' | 'Š' => 's',
+            'č' | 'Č' => 'c',
+            'ć' | 'Ć' => 'c',
+            'ž' | 'Ž' => 'z',
+            'đ' | 'Đ' => 'd',
+            _ => c,
+        })
+        .collect()
 }
 
 /// Build a (trigram → frequency) sparse vector.
