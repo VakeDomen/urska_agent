@@ -1,7 +1,7 @@
 use std::sync::{Arc};
 
 use anyhow::Result;
-use reagent::{init_default_tracing, Agent, Message};
+use reagent::{init_default_tracing, models::invocation::invocation_util::invoke_without_tools, Agent, Message};
 use rmcp::{handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::SseServer, Peer, RoleServer, ServerHandler};
 use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
@@ -37,18 +37,31 @@ async fn main() -> Result<()> {
 
             let memory_prompt = history_to_memory_prompt(history);
 
-            let _ = agent.invoke(&format!("{}\n\n---\n\nYour first task is to \
+            // let _ = agent.invoke_flow(&format!("{}\n\n---\n\nYour first task is to \
+            // identify all potential memories and nothing else. Please write a list of \
+            // memoris that might be usefull at some time in the future.", memory_prompt)).await;
+
+            agent.history.push(Message::user(format!("{}\n\n---\n\nYour first task is to \
             identify all potential memories and nothing else. Please write a list of \
-            memoris that might be usefull at some time in the future.", memory_prompt)).await;
+            memoris that might be usefull at some time in the future.", memory_prompt)));
+            let resp = match invoke_without_tools(&mut agent).await {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("[ERROR] Failed to invoke memory agent: {}", e);
+                    return
+                }
+            };
+            agent.history.push(Message::assistant(resp.message.content.unwrap_or("".into())));
+
 
             agent.tools = tools;
 
-            let _ = agent.invoke("For each potential memory, check if it \
+            let _ = agent.invoke_flow("For each potential memory, check if it \
             already exists in the long term memory storage using the query_memory \
             tool. For each one determine wether it already exists and is duplicate \
             or wether it should be stored.").await;
 
-            let _ = agent.invoke("Store the memories you determined to be \
+            let _ = agent.invoke_flow("Store the memories you determined to be \
             correct for storage. It is extremely important that the memories stored are \
             not duplicates. If the memory was seen in the query_memory tool response \
             it shoud NOT be stored again. Your main task is to not duplicate information \
@@ -119,7 +132,10 @@ This tool is ideal for answering specific questions about undergraduate, master'
     ) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
-        let mut notification_channel = agent.new_notification_channel();
+        let mut notification_channel = match agent.new_notification_channel().await {
+            Ok(ch) => ch,
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())]))
+        };
 
         tokio::spawn(async move {
             if let Ok(progress_token) =  meta
@@ -150,7 +166,7 @@ This tool is ideal for answering specific questions about undergraduate, master'
         };
         agent.history.push(Message::tool(initial_memory_result, "query_memory"));
 
-        let resp = agent.invoke(question.question).await;
+        let resp = agent.invoke_flow(question.question).await;
         let _ = agent.save_history("programme_conversation.json");
         let final_history = agent.history.clone();
         if let Err(e) = self.memory_queue.send(final_history).await {

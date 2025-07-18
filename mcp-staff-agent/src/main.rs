@@ -40,18 +40,18 @@ async fn main() -> Result<()> {
 
             let memory_prompt = history_to_memory_prompt(history);
 
-            let _ = agent.invoke(&format!("{}\n\n---\n\nYour first task is to \
+            let _ = agent.invoke_flow(&format!("{}\n\n---\n\nYour first task is to \
             identify all potential memories and nothing else. Please write a list of \
             memoris that might be usefull at some time in the future.", memory_prompt)).await;
 
             agent.tools = tools;
 
-            let _ = agent.invoke("For each potential memory, check if it \
+            let _ = agent.invoke_flow("For each potential memory, check if it \
             already exists in the long term memory storage using the query_memory \
             tool. For each one determine wether it already exists and is duplicate \
             or wether it should be stored.").await;
 
-            let _ = agent.invoke("Store the memories you determined to be \
+            let _ = agent.invoke_flow("Store the memories you determined to be \
             correct for storage. It is extremely important that the memories stored are \
             not duplicates. If the memory was seen in the query_memory tool response \
             it shoud NOT be stored again. Your main task is to not duplicate information \
@@ -102,50 +102,50 @@ impl Service {
         }
     }
 
-    #[tool(
-        description = r#"
-        Given a name, provides a profile of employees/staff
-        "#
-    )]
-    pub async fn get_staff_profile(
-        &self, 
-        Parameters(prof): Parameters<ProfileRequest>,
-    ) -> Result<CallToolResult, rmcp::Error> {
-        let staff_list_result = get_page("https://www.famnit.upr.si/en/about-faculty/staff/").await;
-        let all_staff = match staff_list_result {
-            Ok(staff_list) => staff_html_to_markdown(&staff_list),
-            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])) 
-        };
-        let names = all_staff
-            .clone()
-            .keys()
-            .map(|k| k.to_string())
-            .collect::<Vec<String>>();
+    // #[tool(
+    //     description = r#"
+    //     Given a name, provides a profile of employees/staff
+    //     "#
+    // )]
+    // pub async fn get_staff_profile(
+    //     &self, 
+    //     Parameters(prof): Parameters<ProfileRequest>,
+    // ) -> Result<CallToolResult, rmcp::Error> {
+    //     let staff_list_result = get_page("https://www.famnit.upr.si/en/about-faculty/staff/").await;
+    //     let all_staff = match staff_list_result {
+    //         Ok(staff_list) => staff_html_to_markdown(&staff_list),
+    //         Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])) 
+    //     };
+    //     let names = all_staff
+    //         .clone()
+    //         .keys()
+    //         .map(|k| k.to_string())
+    //         .collect::<Vec<String>>();
 
-        let top_names = crate::util::rank_names(names, &prof.name)[0..1 as usize].to_vec();
-        println!("Top names: {:#?}", top_names);
-        let mut result = "# Profiles \n\n ---\n\n".to_string();
+    //     let top_names = crate::util::rank_names(names, &prof.name)[0..1 as usize].to_vec();
+    //     println!("Top names: {:#?}", top_names);
+    //     let mut result = "# Profiles \n\n ---\n\n".to_string();
 
-        for name in top_names {
-            let profile_page_link = all_staff.get(&name);
-            if profile_page_link.is_none() {
-                continue;
-            }
-            let profile_page_link = profile_page_link.unwrap();
-            let profile_page = get_page(profile_page_link).await;
+    //     for name in top_names {
+    //         let profile_page_link = all_staff.get(&name);
+    //         if profile_page_link.is_none() {
+    //             continue;
+    //         }
+    //         let profile_page_link = profile_page_link.unwrap();
+    //         let profile_page = get_page(profile_page_link).await;
 
-            if profile_page.is_err() {
-                continue;
-            }
-            let profile_page = profile_page.unwrap();
-            let profile = StaffProfile::from(profile_page);
+    //         if profile_page.is_err() {
+    //             continue;
+    //         }
+    //         let profile_page = profile_page.unwrap();
+    //         let profile = StaffProfile::from(profile_page);
 
-            result = format!("{} \n\n --- \n\n {}", result, profile.to_string());
+    //         result = format!("{} \n\n --- \n\n {}", result, profile.to_string());
 
-        }
-        // let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
-        Ok(CallToolResult::success(vec![Content::text(result)]))
-    }
+    //     }
+    //     // let _memory_resp = agent.invoke("Is there any memory you would like to store?").await;
+    //     Ok(CallToolResult::success(vec![Content::text(result)]))
+    // }
 
     #[tool(
         description = r#"
@@ -172,8 +172,10 @@ impl Service {
     ) -> Result<CallToolResult, rmcp::Error> {
         let mut agent = self.agent.lock().await;
         agent.clear_history();
-        let mut notification_channel = agent.new_notification_channel();
-
+        let mut notification_channel = match agent.new_notification_channel().await {
+            Ok(ch) => ch,
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())]))
+        };
         tokio::spawn(async move {
             if let Ok(progress_token) =  meta
                 .get_progress_token()
@@ -204,7 +206,7 @@ impl Service {
         };
         agent.history.push(Message::tool(initial_memory_result, "query_memory"));
 
-        let resp = agent.invoke(question.question).await;
+        let resp = agent.invoke_flow(question.question).await;
 
         let final_history = agent.history.clone();
         if let Err(e) = self.memory_queue.send(final_history).await {

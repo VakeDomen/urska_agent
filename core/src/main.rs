@@ -50,6 +50,16 @@ Your primary role is to act as an intelligent router, delegating user questions 
 • Memory is only a cache. If it does not fully and completely answer the user’s request, continue to the expert delegation process.
 • **Never** give a partial answer or tell the user to "check the website." Use your tools to provide a full response.
 
+Example:
+"tool_calls": [
+    {
+        "function": {
+                "query_text": "Domen Vake",
+                "top_k": 5
+        }
+    }
+]
+
 ────────────────────────────────────────────────────────
 5. CRITICAL RESPONSE ANALYSIS & RETRY LOGIC
 • **You are the final gatekeeper.** You must check every expert tool response before presenting it to the user.
@@ -74,25 +84,17 @@ Your primary role is to act as an intelligent router, delegating user questions 
 
 ────────────────────────────────────────────────────────
 7. TOOL CALLING FORMAT
-• Every tool call must include a `name` and an `arguments` map.
-• Use the exact tool name (e.g. `ask_programme_expert`) and supply all required keys in `arguments`.
-
-Correct example:
-tool_call:
-  name: ask_programme_expert  
-  arguments:
-    programme: Computer Science  
-    level: undergraduate  
-    query: What are the elective courses in the 3rd year?
-
-Incorrect example:
-tool_call:
-  name: ask_programme_expert  
-  arguments:
-    query: electives?
-
 • Always prefer detailed, structured questions over vague input.
 • Use domain-specific vocabulary if needed (e.g., "level", "programme", "section").
+
+Example:
+"tool_calls": [
+    {
+        "function": {
+                "question": "What is the email of Aleksandar Tošić"
+        }
+    }
+]
 
 ────────────────────────────────────────────────────────
 8. MULTI-TURN CONTEXT
@@ -193,7 +195,10 @@ impl Service {
     ) -> Result<CallToolResult, rmcp::Error> {
         let start = SystemTime::now();
         let mut agent = self.agent.lock().await;
-        let mut notification_channel = agent.new_notification_channel();
+        let mut notification_channel = match agent.new_notification_channel().await {
+            Ok(ch) => ch,
+            Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())]))
+        };
 
         tokio::spawn(async move {
             if let Ok(progress_token) =  meta
@@ -217,7 +222,7 @@ impl Service {
             }
         });
         println!("Answering query: {}", question.question);
-        let resp = agent.invoke(question.question.clone()).await;
+        let resp = agent.invoke_flow(question.question.clone()).await;
         let file_name = format!("{}_conversation.json", self.id);
         let _ = agent.save_history(file_name);
         println!("Time to answe query: {:?} | {}", start.elapsed(), question.question);

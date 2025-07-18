@@ -25,3 +25,4 @@ target/
 
 /target
 *conversation.json
+qdrant_storage

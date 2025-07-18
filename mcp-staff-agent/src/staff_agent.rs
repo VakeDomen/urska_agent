@@ -78,13 +78,20 @@ pub async fn init_staff_agent() -> Result<Agent> {
     let profile_executor: AsyncToolFn = {
         Arc::new(move |args: Value| {
             let names = all_staff.clone();
+            
             Box::pin(async move {
+                let args = match args.get("arguments") {
+                    Some(a) => a,
+                    None => return Err(ToolExecutionError::ArgumentParsingError("Missing 'name' argument".into()))
+                };
+
                 let profiles = names.clone();
                 let names = names
                     .clone()
                     .keys()
                     .map(|k| k.to_string())
                     .collect::<Vec<String>>();
+                println!("ARGS: {:#?}", args);
                 let query_name = args.get("name")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| ToolExecutionError::ArgumentParsingError("Missing 'name' argument".into()))?;
@@ -94,7 +101,7 @@ pub async fn init_staff_agent() -> Result<Agent> {
                     .unwrap_or_else(|| 1);
 
                 let top_names = rank_names(names, query_name)[0..k as usize].to_vec();
-
+                println!("Profile search ({}) -> {:#?}", query_name,top_names);
                 let mut result = "# Profiles \n\n ---\n\n".to_string();
 
                 for name in top_names {
