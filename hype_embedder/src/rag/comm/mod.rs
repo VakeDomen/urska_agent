@@ -56,10 +56,13 @@ impl OllamaClient {
 
 
 fn strip_thinking(response: &str) -> &str {
-    response
-        .split_once("</think>")
-        .map_or(response, |(_before, after)| {
-            println!("Q: {after}");
-            after.trim_start()
-        })
+    let split = response.split_once("</think>");
+    match split {
+        Some((before, after)) => if after.is_empty() {
+            before
+        } else {
+            after
+        },
+        None => response,
+    }
 }

@@ -41,14 +41,16 @@ impl<'a> Into<GenerationRequest<'a>> for &'a Question {
             self.context.join("\n")
         };
 
-        let final_prompt = format!("{}\n{}\n{}", self.system_prompt, self.question, context);
-        
-        match &self.body {
-            Some(b) => GenerationRequest::new(self.model.clone(), b),
-            None => GenerationRequest::new(self.model.clone(), final_prompt),
-        } 
+        let mut final_prompt = format!("{}\n{}\n{}", self.system_prompt, self.question, context);
+
+        if self.system_prompt.contains("{{context}}") {
+            final_prompt = self.system_prompt.clone();
+            final_prompt = final_prompt.replace("{{context}}", &context);
+        }
+        GenerationRequest::new(self.model.clone(), final_prompt)
     }
 }
+
 
 impl Question {
     pub fn set_system_prompt(mut self, prompt: &str) -> Self {
@@ -68,11 +70,6 @@ impl Question {
 
     pub fn set_context(mut self, context: Vec<String>) -> Self {
         self.context = context;
-        self
-    }
-
-    pub fn set_body(mut self, body: String) -> Self {
-        self.body = Some(body);
         self
     }
 }

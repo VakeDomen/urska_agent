@@ -14,6 +14,7 @@ pub async fn hype(file: ChunkedFile<Chunk>, ollama: &OllamaClient) -> ChunkedFil
     let summary = summarize_document(&file, ollama).await;
     let hype_question_prompts = generate_hype_prompt_questions(summary, &file);
     let hype_questions = ollama.answer_all(hype_question_prompts).await;
+    println!("HQ: {:#?}", hype_questions);
     let hype_chunks = generate_hype_chunks(&file.chunks, hype_questions);
     replace_chunks(file, hype_chunks)
 }
@@ -74,7 +75,7 @@ fn generate_hype_prompt_questions(summary: String, file: &ChunkedFile<Chunk>) ->
     file.chunks
         .iter()
         .map(|c| {
-            Question::from(question.clone()).set_body(format!(r#"
+            Question::from(question.clone()).set_system_prompt(r#"
             You will be given a chunk of text relating in some way to UP FAMNIT (University of Primorska - \
         Faculty of Mathematics, Natural Sciences, and Information Technologies). 
 
@@ -121,7 +122,7 @@ fn generate_hype_prompt_questions(summary: String, file: &ChunkedFile<Chunk>) ->
 
         -------------- Text to ask about: START -------------- 
 
-        {:#?}
+        {{context}}
 
         -------------- Text to ask about: END -------------- 
 
@@ -138,15 +139,8 @@ fn generate_hype_prompt_questions(summary: String, file: &ChunkedFile<Chunk>) ->
 
 
         -------------- Output: -------------- 
-    """
-    
-    system_msg = """
-    /no_think 
-    You are an AI that only answers in questions based on provided content \
-    from UP FAMNIT (University of Primorska - Faculty of Mathematics, Natural Sciences, and \
-    Information Technologies). Your task is to extract all possible questions from a given \
-    text that a student might ask.
-            "#, c))
+            "#)
+            .set_context(vec![c.text.clone()])
         })
         .collect()
 }
