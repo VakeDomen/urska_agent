@@ -1,7 +1,7 @@
 use qdrant_client::qdrant::PointStruct;
 use serde_json::{Map, Value};
-use crate::qdrant::EmbeddingVector;
 
+use crate::rag::comm::embedding::EmbeddingVector;
 
 #[derive(Debug)]
 pub struct EmbeddedChunk {

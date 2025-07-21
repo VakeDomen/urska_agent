@@ -17,6 +17,7 @@ const STAFF_AGENT_URL: &str = "http://localhost:8001/sse";
 const MEMORY_URL: &str = "http://localhost:8002/sse";
 const PROGRAMME_AGENT_URL: &str = "http://localhost:8003/sse";
 const SCRAPER_AGENT_URL: &str = "http://localhost:8000/sse"; 
+const RAG_SERVICE: &str = "http://localhost:8005/sse"; 
 const BIND_ADDRESS: &str = "127.0.0.1:8004";
 
 
@@ -139,7 +140,8 @@ NOTE: Always use tools first!
         .add_mcp_server(McpServerType::Sse(STAFF_AGENT_URL.into()))
         .add_mcp_server(McpServerType::Sse(PROGRAMME_AGENT_URL.into()))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
-        .add_mcp_server(McpServerType::Sse(MEMORY_URL.into()))
+        // .add_mcp_server(McpServerType::Sse(MEMORY_URL.into()))
+        .add_mcp_server(McpServerType::Sse(RAG_SERVICE.into()))
         .build()
         .await?;
 

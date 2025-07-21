@@ -3,31 +3,14 @@ use std::env;
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use qdrant_client::{
-    qdrant::{PointStruct, SearchPoints, SearchResponse, UpsertPointsBuilder},
+    qdrant::{PointStruct, SearchResponse, UpsertPointsBuilder},
     Qdrant,
 };
 use tokio::sync::Mutex;
 
-use crate::chunk::EmbeddedChunk;
+use crate::rag::models::chunks::EmbeddedChunk;
 
-
-
-#[derive(Debug, Clone)]
-pub struct EmbeddingVector(pub Vec<f32>);
-
-impl Into<SearchPoints> for EmbeddingVector {
-    fn into(self) -> SearchPoints {
-        let qdrant_collection = env::var("QDRANT_COLLECTION_NAME").expect("QDRANT_COLLECTION_NAME not defined");
-        SearchPoints {
-            collection_name: qdrant_collection,
-            vector: self.0,
-            limit: 7,
-            with_payload: Some(true.into()),
-            with_vectors: Some(false.into()),
-            ..Default::default()
-        }
-    }
-}
+use super::embedding::EmbeddingVector;
 
 /// Static global client for accessing the Qdrant database.
 ///
@@ -37,7 +20,7 @@ impl Into<SearchPoints> for EmbeddingVector {
 /// # Panics
 /// - Panics if the connection to the Qdrant database cannot be established, indicating a configuration or network issue.
 static QDRANT_CLIENT: Lazy<Mutex<Qdrant>> = Lazy::new(|| {
-    let qdrant_server = env::var("QDRANT_ENDPOINT").expect("QDRANT_ENDPOINT not defined");
+    let qdrant_server = env::var("QDRANT_SERVER").expect("QDRANT_SERVER not defined");
     let client = match Qdrant::from_url(&qdrant_server).build() {
         Ok(c) => c,
         Err(e) => panic!("Can't establish Qdrant DB connection: {:#?}", e),
@@ -68,7 +51,7 @@ pub async fn vector_search(embedding: EmbeddingVector) -> Result<SearchResponse>
 pub async fn insert_chunks_to_qdrant(embedded_chunks: Vec<EmbeddedChunk>) -> Result<()> {
     println!("Upserting to qdrant...");
     let client = QDRANT_CLIENT.lock().await;
-    let qdrant_collection = env::var("QDRANT_COLLECTION_NAME").expect("QDRANT_COLLECTION_NAME not defined");
+    let qdrant_collection = env::var("QDRANT_COLLECTION").expect("QDRANT_COLLECTION not defined");
 
     let points: Vec<PointStruct> = embedded_chunks.into_iter().map(|c| c.into()).collect();
 
