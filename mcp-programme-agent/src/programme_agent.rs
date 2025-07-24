@@ -15,50 +15,12 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
 • A programme with the same name, like "Computer Science," can exist at multiple levels. Always be precise about the level.
 
 ────────────────────────────────────────────────────────
-2 PLANNING & REFLECTION  
-• **Immediately after reading the user’s request, draft a short, numbered plan** that lists the steps you intend to take.
-• After every tool call, **reflect** on your progress and update the plan if necessary.
-
-────────────────────────────────────────────────────────
-3 MEMORY-FIRST, BUT VERIFY
-• At the start of the conversation, you will find the results of a memory query already in your history. **Review these results first** to inform your plan.
-• **Crucial Principle:** Your memory is a helpful starting point, but it can be incomplete. The tools are the source of truth.
-• If the user asks for a list or a count of items (e.g., "list all courses"), you **must still use a tool to fetch the complete, definitive list** before answering.
-
-────────────────────────────────────────────────────────
-4 AMBIGUITY & CLARIFICATION
+2 AMBIGUITY & CLARIFICATION
 • If the user asks for a programme like "Computer Science" without specifying a level, you MUST check for ambiguity. The `get_programme_info` tool will help you with this.
 • When you receive an ambiguity message, your next step is to **ask the user a clarifying question**. Do not try to guess the level.
 
 ────────────────────────────────────────────────────────
-5 TOOLS – OVERVIEW
-
-→ **list_all_programmes** – Use when the user wants a general list of programmes.
-
-→ **get_similar_programme_names** - Use to find programme names when the user's query is misspelled or a partial match.
-  • Example: `{ "name": "..." }`
-  • If unsure about names **list_all_programmes** can also be used
-
-→ **get_programme_info** – Use to get definitive, up-to-date information about a programme.
-  • **BE EFFICIENT:** Use the `sections` parameter to request **only the information you need.**
-  • Example: `{ "name": "...", "level": "...", "sections": ["admission_requirements"] }`
-  • The tool will return the source URL along with the information.
-
-────────────────────────────────────────────────────────
-6 WORKFLOW
-
-1.  Review the initial memory results in your history.
-2.  Produce a plan.
-3.  If the user asks for a general list, use `list_all_programmes`.
-4.  If the user asks for specific details:
-    a. Determine the programme name, level, and the specific information sections needed.
-    b. **Even if memory has a partial answer, call `get_programme_info` to get the complete and authoritative information.**
-    c. If the tool reports ambiguity, update your plan to ask the user for clarification.
-    d. Formulate your final answer using the complete information from the tool's output.
-5.  When all information is gathered, wrap your final, self-contained answer in `<final> … </final>`.
-
-────────────────────────────────────────────────────────
-7 ANSWER FORMATTING
+3 ANSWER FORMATTING
 • Use Markdown for clear presentation (lists, tables).
 • For unknown values, use "—".
 • Always specify the programme level in your answer (e.g., "The undergraduate programme in Mathematics...").
@@ -238,14 +200,12 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
             .executor(programme_info_executor)
             .build()?;
             
-        let agent = AgentBuilder::default()
+        let agent = AgentBuilder::plan_and_execute()
             .set_model("qwen3:30b")
-            .set_ollama_endpoint("http://hivecore.famnit.upr.si")
-            .set_ollama_port(6666)
+            .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
             .set_system_prompt(agent_system_prompt.to_string())
             .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL))
             .add_mcp_server(McpServerType::sse(SCRAPER_MCP_URL))
-            .set_stopword("<final>")
             .add_tool(list_programmes_tool)
             .add_tool(similar_programmes_tool)
             .add_tool(programme_info_tool)

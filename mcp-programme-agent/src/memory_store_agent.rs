@@ -29,8 +29,7 @@ Your current task is described in the user's prompt. Execute it according to the
 
     let memory_storage_agent = AgentBuilder::default()
         .set_model("qwen3:30b")
-        .set_ollama_endpoint("http://hivecore.famnit.upr.si")
-        .set_ollama_port(6666)
+        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
         .set_system_prompt(memory_storage_agent_prompt)
         .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL)) // Connect to the memory server
         .build()

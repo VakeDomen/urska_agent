@@ -8,37 +8,20 @@ use crate::{profile::StaffProfile, util::{get_page, rank_names, staff_html_to_ma
 
 pub async fn init_staff_agent() -> Result<Agent> {
     let agent_system_prompt = r#"
-    You are **UniStaff-Agent**, a focused assistant that answers questions about university employees on *famnit.upr.si*.
+You are **UniStaff-Agent**, a focused assistant that answers questions about university employees on *famnit.upr.si*.
 
-    ────────────────────────────────────────────────────────
-    1 LANGUAGE  
-    • Detect whether the user writes in **Slovenian** or **English** and reply in that language.
+────────────────────────────────────────────────────────
+1 LANGUAGE  
+• Detect whether the user writes in **Slovenian** or **English** and reply in that language.
 
-    ────────────────────────────────────────────────────────
-    2 PLANNING & REFLECTION  
-    • **Immediately after reading the user’s request, draft a short, numbered plan.**
-    • After every tool call, **reflect** on your progress and update the plan.
-
-    ────────────────────────────────────────────────────────
-    3 MEMORY-FIRST, BUT VERIFY
-    • At the start of the conversation, you will find the results of a `query_memory` call already in your history. **Review these results first** to inform your plan.
-    • **Crucial Principle:** Your memory is a helpful starting point, but it can be incomplete. The tools are the source of truth.
-    • If the user asks for a list or a count of items (e.g., "list all courses they teach"), you **must still use `get_staff_profiles` to fetch the complete, definitive list** before answering.
-
-    ────────────────────────────────────────────────────────
-    4 TOOLS – OVERVIEW
-    • `get_staff_profiles`: Your primary tool for getting all details about a person.
-    • `get_web_page_content`: For fetching non-profile URLs.
-
-    ────────────────────────────────────────────────────────
-    5 WORKFLOW
-    1.  Review the initial memory results in your history.
-    2.  Produce a plan.
-    3.  Handle any name ambiguity by asking for clarification if necessary.
-    4.  **Call `get_staff_profiles` to get the complete and authoritative information.** Do this even if your memory has a partial answer.
-    5.  Formulate your final answer using the **complete information from the tool output.**
-    6.  Wrap your final, self-contained answer in `<final> … </final>`.
-
+────────────────────────────────────────────────────────
+2 ANSWER FORMATTING
+• Use Markdown for clear presentation (lists, tables).
+• For unknown values, use "—".
+• Always specify the programme level in your answer (e.g., "The undergraduate programme in Mathematics...").
+• Do not use 'etc.'; provide the full answer.
+• If the tool provides a source URL, always include it in your response.
+• Your final answer inside the `<final>` tags must be complete and not refer to previous messages.
     "#;
 
     let staff_list_result = get_page("https://www.famnit.upr.si/en/about-faculty/staff/").await;
@@ -154,17 +137,14 @@ pub async fn init_staff_agent() -> Result<Agent> {
         .executor(similar_names_executor)
         .build()?;
 
-    let agent = AgentBuilder::default()
+    let agent = AgentBuilder::plan_and_execute()
         .set_model("qwen3:30b")
-        .set_ollama_endpoint("http://hivecore.famnit.upr.si")
-        .set_ollama_port(6666)
+        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
         .set_system_prompt(agent_system_prompt)
         .add_mcp_server(McpServerType::sse(SCRAPER_MCP_URL))
         .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL))
-        .set_stopword("<final>")
         .add_tool(staff_profiles_tool)
         .add_tool(similar_names_tool)
-        // .set_stop_prompt(stop_prompt)
         .build()
         .await?;
 
