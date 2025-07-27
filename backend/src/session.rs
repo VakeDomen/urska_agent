@@ -7,7 +7,7 @@ use futures::StreamExt;
 use rmcp::{
     model::{CallToolRequestParam, ProgressNotificationParam},
     service::RunningService,
-    transport::SseClientTransport,
+    transport::StreamableHttpClientTransport,
     ClientHandler,                     // trait
     ServiceExt,                        // for .serve()
 };
@@ -58,12 +58,8 @@ pub async fn ws_index(
     let (notif_tx, notif_rx) = mpsc::channel::<ProgressNotificationParam>(32);
 
     // 2) start SSE transport + MCP client with our ProgressHandler
-    let transport = SseClientTransport::start("http://localhost:8004/sse")
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to start SSE transport: {}", e);
-            actix_web::error::ErrorInternalServerError("SSE transport error")
-        })?;
+    let transport = StreamableHttpClientTransport::from_uri("http://localhost:8004/mcp");
+
 
     let handler = ProgressHandler { tx: notif_tx };
     let client: RunningService<_, _> = handler
