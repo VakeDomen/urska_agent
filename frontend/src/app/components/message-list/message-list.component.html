@@ -1,10 +1,17 @@
-<div class="messages">
-  <div *ngFor="let msg of messages" [ngClass]="msg.role" [@fadeIn]>
-    <div class="bubble">
-      <p>{{ msg.content }}</p>
-      <span class="timestamp">
-        {{ msg.timestamp | date:'shortTime' }}
-      </span>
+<div class="message-list-container">
+  <div *ngFor="let msg of messages" 
+       class="message-wrapper"
+       [ngClass]="{
+         'user-message': msg.role === 'user',
+         'assistant-message': msg.role === 'assistant'
+       }">
+    <div class="message-row">
+      <div *ngIf="msg.role === 'assistant'" class="message-bubble">
+        <markdown [data]="msg.content"></markdown>
+      </div>
+      <div *ngIf="msg.role === 'user'" class="message-bubble">
+        {{ msg.content }}
+      </div>
     </div>
   </div>
 </div>

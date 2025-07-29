@@ -201,10 +201,10 @@ You are **UniProgramme-Agent**, a focused assistant that answers questions about
             .build()?;
             
         let agent = AgentBuilder::plan_and_execute()
-            .set_model("qwen3:30b")
+            .set_model("qwen3:4b")
+            .set_name("Programme-agent")
             .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
-            .set_system_prompt(agent_system_prompt.to_string())
-            .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL))
+            // .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL))
             .add_mcp_server(McpServerType::sse(SCRAPER_MCP_URL))
             .add_tool(list_programmes_tool)
             .add_tool(similar_programmes_tool)

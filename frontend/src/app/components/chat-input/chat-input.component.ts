@@ -10,7 +10,7 @@ import { FormsModule } from '@angular/forms'
   styleUrls: ['./chat-input.component.css']
 })
 export class ChatInputComponent {
-  text = ''
+  text = 'Doea famnit offer any scholarships for PhD students?'
   @Output() send = new EventEmitter<string>()
 
   onEnter(event: any) {

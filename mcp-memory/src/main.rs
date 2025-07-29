@@ -11,8 +11,10 @@ use crate::ollama_service::OllamaService;
 use crate::qdrant_service::QdrantService;
 use crate::mcp_service::{MemoryMcpService, AppState};
 use anyhow::Result;
-use rmcp::transport::sse_server::SseServerConfig;
-use rmcp::transport::SseServer;
+use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::StreamableHttpService;
+
+const BIND_ADDRESS: &str = "127.0.0.1:8002";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -38,38 +40,23 @@ async fn main() -> Result<()> {
     // 4. Serve the service using rmcp's axum_server
     // This will start an HTTP server that handles RMCP requests for the tools.
 
-    let config = SseServerConfig {
-        bind: app_config.bind_address.parse()?,
-        sse_path: "/sse".to_string(),
-        post_path: "/message".to_string(),
-        ct: tokio_util::sync::CancellationToken::new(),
-        sse_keep_alive: None,
-    };
-    println!("Starting RMCP server on {}...", app_config.bind_address);
-    let (sse_server, router) = SseServer::new(config);
+    let service = StreamableHttpService::new(
+        move || Ok(MemoryMcpService::new(app_state.clone())),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    );
 
-    // Do something with the router, e.g., add routes or middleware
+    let router = axum::Router::new().nest_service("/mcp", service);
+    let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
+    let _ = axum::serve(tcp_listener, router)
+        .with_graceful_shutdown(async { tokio::signal::ctrl_c().await.unwrap() })
+        .await;
 
-    let listener = tokio::net::TcpListener::bind(sse_server.config.bind).await?;
-
-    let ct = sse_server.config.ct.child_token();
-
-    let server = axum::serve(listener, router).with_graceful_shutdown(async move {
-        ct.cancelled().await;
-        println!("sse server cancelled");
-    });
-
-    tokio::spawn(async move {
-        if let Err(e) = server.await {
-            println!("sse server shutdown with error: {}", e.to_string());
-        }
-    });
-
-    let ct = sse_server
-        .with_service(move || MemoryMcpService::new(app_state.clone()));
+    // let ct = sse_server
+    //     .with_service(move || MemoryMcpService::new(app_state.clone()));
     // let ct = sse_server.with_service(move || Counter::new());
 
     tokio::signal::ctrl_c().await?;
-    ct.cancel();
+    // ct.cancel();
     Ok(())
 }

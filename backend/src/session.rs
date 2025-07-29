@@ -145,7 +145,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
         item: Result<ws::Message, ws::ProtocolError>,
         ctx: &mut Self::Context,
     ) {
-        println!("New message: {:#?}", item);
+        // println!("New message: {:#?}", item);
         match item {
             Ok(ws::Message::Text(txt)) => {
                 // parse the prompt request
@@ -153,11 +153,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
                     let mut client = self.mcp_client.clone();
                     let addr = ctx.address();
                     // spawn an async task in the actor to call the tool
-                    println!("drek");
                     let _a = ctx.spawn(
                         async move {
                             // build the tool call
-                            println!("Calling tool!");
+                            // println!("Calling tool!");
 
                             let mut args = Map::new();
                             args.insert("question".to_owned(), Value::String(req.question.clone()));
@@ -168,7 +167,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
                             };
                             // call the tool (fires progress events to our handler)
                             let result = client.call_tool(call).await;
-                            println!("Tool result: {:#?}", result);
+                            // println!("Tool result: {:#?}", result);
                             if let Err(e) = &result {
                                 // on error, send it as a chunk
                                 let err_msg = BackendMessage::Chunk(format!(
@@ -189,7 +188,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
             }
             Ok(ws::Message::Ping(p)) => ctx.pong(&p),
             Ok(ws::Message::Close(_)) => ctx.stop(),
-            _ => {}
+            a => {
+                println!("Something else recieved: {:#?}", a)
+
+            }
         }
     }
 }

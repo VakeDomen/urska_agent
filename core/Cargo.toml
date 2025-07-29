@@ -8,7 +8,7 @@ anyhow = {version = "1.0.98" }
 reqwest = { version = "0.12.15", features = ["blocking"] }
 rmcp = { version = "0.2", features = [
     "server", 
-    "transport-sse-server",
+    "transport-streamable-http-server",
     "client", 
     "transport-sse-client", 
     "reqwest",
@@ -22,3 +22,4 @@ reagent ={ git = "https://github.com/VakeDomen/Reagent.git", branch = "main" }
 scraper = "0.23"
 html-escape = "0.2.13"
 async-trait = "0.1.88"
+axum = "0.8.4"

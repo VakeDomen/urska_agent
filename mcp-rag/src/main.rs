@@ -2,7 +2,7 @@ use std::{fmt::format, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use reagent::{init_default_tracing, Agent, AgentBuilder, McpServerType};
 use rmcp::{
-    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id, SseServer}, Peer, RoleServer, ServerHandler
+    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id, streamable_http_server::session::local::LocalSessionManager, StreamableHttpService}, Peer, RoleServer, ServerHandler
 };
 use anyhow::Result;
 use serde::{de::IntoDeserializer, Deserialize};
@@ -19,12 +19,18 @@ async fn main() -> Result<()> {
     init_default_tracing();
     let _ = dotenv::dotenv();
 
-    let ct = SseServer::serve(BIND_ADDRESS.parse()?)
-        .await?
-        .with_service(|| Service::new());
+    let service = StreamableHttpService::new(
+        || Ok(Service::new()),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    );
 
+    let router = axum::Router::new().nest_service("/mcp", service);
+    let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
+    let _ = axum::serve(tcp_listener, router)
+        .with_graceful_shutdown(async { tokio::signal::ctrl_c().await.unwrap() })
+        .await;
     tokio::signal::ctrl_c().await?;
-    ct.cancel();
 
     Ok(())
 }

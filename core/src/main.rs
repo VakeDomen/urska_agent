@@ -2,22 +2,24 @@ use std::{fmt::format, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use reagent::{init_default_tracing, Agent, AgentBuilder, McpServerType};
 use rmcp::{
-    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id, SseServer}, Peer, RoleServer, ServerHandler
+    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id}, Peer, RoleServer, ServerHandler
 };
 use anyhow::Result;
 use serde::{de::IntoDeserializer, Deserialize};
 use tokio::sync::Mutex;
 
 use crate::peers::CLIENT_PEERS;
-
+use rmcp::transport::streamable_http_server::{
+    StreamableHttpService, session::local::LocalSessionManager,
+};
 
 mod peers;
 
-const STAFF_AGENT_URL: &str = "http://localhost:8001/sse";
-const MEMORY_URL: &str = "http://localhost:8002/sse";
-const PROGRAMME_AGENT_URL: &str = "http://localhost:8003/sse";
+const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";
+const MEMORY_URL: &str = "http://localhost:8002/mcp";
+const PROGRAMME_AGENT_URL: &str = "http://localhost:8003/mcp";
 const SCRAPER_AGENT_URL: &str = "http://localhost:8000/sse"; 
-const RAG_SERVICE: &str = "http://localhost:8005/sse"; 
+const RAG_SERVICE: &str = "http://localhost:8005/mcp"; 
 const BIND_ADDRESS: &str = "127.0.0.1:8004";
 
 
@@ -46,22 +48,34 @@ You are **Urška**, a helpful, knowledgeable, and reliable assistant for the Uni
     // --- Agent Definition ---
     
     let agent = AgentBuilder::plan_and_execute()
-        .set_model("qwen3:30b") // Or any other powerful model
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_name("Urška")
         .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
-        .set_system_prompt(agent_system_prompt.to_string())
-        .add_mcp_server(McpServerType::Sse(STAFF_AGENT_URL.into()))
-        .add_mcp_server(McpServerType::Sse(PROGRAMME_AGENT_URL.into()))
+        .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
+        .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
-        .add_mcp_server(McpServerType::Sse(MEMORY_URL.into()))
-        .add_mcp_server(McpServerType::Sse(RAG_SERVICE.into()))
+        .add_mcp_server(McpServerType::streamable_http(MEMORY_URL))
+        .add_mcp_server(McpServerType::streamable_http(RAG_SERVICE))
         .build()
         .await?;
 
     let conn_counter = Arc::new(AtomicI32::new(0));
 
-    let ct = SseServer::serve(BIND_ADDRESS.parse()?)
-        .await?
-        .with_service(move || Service::new(agent.clone(), conn_counter.clone()));
+    // let ct = SseServer::serve(BIND_ADDRESS.parse()?)
+    //     .await?
+    //     .with_service(move || Service::new(agent.clone(), conn_counter.clone()));
+
+    let service = StreamableHttpService::new(
+        move || Ok(Service::new(agent.clone(), conn_counter.clone())),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    );
+
+    let router = axum::Router::new().nest_service("/mcp", service);
+    let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
+    let _ = axum::serve(tcp_listener, router)
+        .with_graceful_shutdown(async { tokio::signal::ctrl_c().await.unwrap() })
+        .await;
 
     println!("Urška, the general agent, is listening on {}", BIND_ADDRESS);
     println!("She can delegate tasks to:");
@@ -71,7 +85,7 @@ You are **Urška**, a helpful, knowledgeable, and reliable assistant for the Uni
     println!("- Memory at {}", MEMORY_URL);
 
     tokio::signal::ctrl_c().await?;
-    ct.cancel();
+    // ct.cancel();
 
     Ok(())
 }

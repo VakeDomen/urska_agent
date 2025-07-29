@@ -1,16 +1,25 @@
+<div class="page-container">
 
-<h1>🟢 ChatComponent is alive!</h1>
+  <div class="chat-wrapper">
 
-<div class="chat-layout">
-  <button class="toggle-btn" (click)="sideOpen = !sideOpen">
-    Notifications
-  </button>
-  <side-panel
-    [notifications]="notifications"
-    [open]="sideOpen">
-  </side-panel>
-  <div class="main-chat">
-    <message-list [messages]="messages"></message-list>
-    <chat-input (send)="sendPrompt($event)"></chat-input>
+    <div class="chat-container">
+      <message-list [messages]="messages"></message-list>
+      <chat-input (send)="sendPrompt($event)"></chat-input>
+    </div>
+    
+    <aside 
+      class="side-panel-container" 
+      [class.open]="sideOpen"
+      (mouseenter)="handlePanelEnter()"
+      (mouseleave)="handlePanelLeave()">
+      
+      <div class="side-panel-header">
+        <h3>Agent Activity</h3>
+      </div>
+      <div class="side-panel-content">
+        <side-panel [notifications]="notifications"></side-panel>
+      </div>
+    </aside>
+
   </div>
 </div>

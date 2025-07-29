@@ -1,16 +1,192 @@
-<div class="side-panel" [class.open]="open">
-  <div
-    class="notification-item"
-    *ngFor="let n of notifications">
-    <div
-      class="preview"
-      (click)="toggle(n)">
-      {{ n.content | slice:0:30 }}…
+<div class="notifications-list">
+  <div *ngFor="let n of notifications; trackBy: trackById" class="notification-item">
+    
+    <div class="notification-header" (click)="toggle(n)">
+      <span class="agent-name">{{ n.agent }}</span>
+      <span class="summary">{{ getNotificationSummary(n.content) }}</span>
+      <span class="arrow">{{ n.expanded ? '▼' : '▶' }}</span>
     </div>
-    <div
-      class="full"
-      *ngIf="n.expanded">
-      {{ n.content }}
+
+    <div *ngIf="n.expanded" class="notification-body">
+
+      <div *ngIf="'Done' in n.content">
+
+      </div>
+
+      <div *ngIf="'PromptRequest' in n.content" class="body-content">
+        
+      
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.PromptRequest | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+
+        <div class="detail-block">
+          <div class="system-prompt-toggle" (click)="toggleSystemPrompt(n)">
+            {{ n.systemPromptVisible ? '▼' : '▶' }} View System Prompt
+          </div>
+          <div *ngIf="n.systemPromptVisible" class="prompt-content">
+            <markdown [data]="n.content.PromptRequest.messages[0]?.content"></markdown>
+          </div>
+        </div>
+
+        <div class="detail-block">
+          <div class="system-prompt-toggle" (click)="toggleTask(n)">
+            {{ n.taskVisible ? '▼' : '▶' }} View Task
+          </div>
+          <div *ngIf="n.taskVisible" class="prompt-content">
+            <markdown [data]="getUserTask(n.content.PromptRequest.messages)"></markdown>
+          </div>
+        </div>
+
+      </div>
+        
+
+      <div *ngIf="'PromptSuccessResult' in n.content">
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.PromptSuccessResult | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+      </div>
+
+      <div *ngIf="'PromptErrorResult' in n.content">
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.PromptErrorResult | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+      </div>
+
+      <div *ngIf="'ToolCallRequest' in n.content">
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.ToolCallRequest | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+      </div>
+
+      <div *ngIf="'ToolCallSuccessResult' in n.content">
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.ToolCallSuccessResult | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+
+      </div>
+
+      <div *ngIf="'ToolCallErrorResult' in n.content">
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.ToolCallErrorResult | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+
+      </div>
+
+      <div *ngIf="'McpToolNotification' in n.content">
+        <div class="details-grid">
+          <ng-container *ngFor="let item of n.content.McpToolNotification | keyvalue">
+            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
+
+              <ng-container *ngIf="item.key === 'format'; else defaultPair">
+                <label>format</label>
+                <pre class="details-pre">{{ item.value | json }}</pre>
+              </ng-container>
+
+              <ng-template #defaultPair>
+                <label>{{ item.key }}</label>
+                <span>{{ item.value }}</span>
+              </ng-template>
+              
+            </ng-container>
+          </ng-container>
+        </div>
+
+      </div>
+
+      <div class="detail-block">
+        <div class="system-prompt-toggle" (click)="toggleRaw(n)">
+          {{ n.rawExpanded ? '▼' : '▶' }} View raw
+        </div>
+        <div *ngIf="n.rawExpanded" class="prompt-content">
+            <pre>{{ n.content | json }}</pre>
+        </div>
+      </div>
     </div>
+
   </div>
 </div>

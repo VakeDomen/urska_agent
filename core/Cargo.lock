@@ -1401,8 +1401,8 @@ dependencies = [
 
 [[package]]
 name = "reagent"
-version = "0.1.1"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#784c82feefd5e7d5297f7e1e9fb65cd32d78d0fb"
+version = "0.1.2"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#31efeae08d989e0cc7a5870355cb53bac9c840f6"
 dependencies = [
  "reqwest",
  "rmcp",
@@ -1536,7 +1536,6 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37f2048a81a7ff7e8ef6bc5abced70c3d9114c8f03d85d7aaaafd9fd04f12e9e"
 dependencies = [
- "axum",
  "base64",
  "bytes",
  "chrono",
@@ -2296,6 +2295,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "html-escape",
  "reagent",
  "reqwest",

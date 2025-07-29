@@ -972,10 +972,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
-name = "mcp-programme-agent"
+name = "mcp-staff"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "axum",
  "html-escape",
  "reagent",
  "reqwest",
@@ -1407,7 +1408,7 @@ dependencies = [
 [[package]]
 name = "reagent"
 version = "0.1.2"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#31efeae08d989e0cc7a5870355cb53bac9c840f6"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#927d1dda8f683b57fcf300125dec9906a810805e"
 dependencies = [
  "reqwest",
  "rmcp",
@@ -1541,7 +1542,6 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37f2048a81a7ff7e8ef6bc5abced70c3d9114c8f03d85d7aaaafd9fd04f12e9e"
 dependencies = [
- "axum",
  "base64",
  "bytes",
  "chrono",

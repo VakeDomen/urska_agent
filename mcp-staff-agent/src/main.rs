@@ -18,7 +18,7 @@ mod memory_store_agent;
 mod staff_agent;
 
 const BIND_ADDRESS: &str = "127.0.0.1:8001";
-const MEMORY_MCP_URL: &str = "http://localhost:8002/sse";
+const MEMORY_MCP_URL: &str = "http://localhost:8002/mcp";
 const SCRAPER_MCP_URL: &str = "http://localhost:8000/sse";
 
 

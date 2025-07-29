@@ -1,0 +1,8 @@
+langchain
+langchain-community
+langchain_text_splitters
+langchain-ollama
+ollama
+qdrant-client
+python-dotenv
+tqdm

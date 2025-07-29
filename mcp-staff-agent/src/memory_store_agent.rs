@@ -31,7 +31,7 @@ Your current task is described in the user's prompt. Execute it according to the
         .set_model("qwen3:30b")
         .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
         .set_system_prompt(memory_storage_agent_prompt)
-        .add_mcp_server(McpServerType::sse(MEMORY_MCP_URL)) // Connect to the memory server
+        .add_mcp_server(McpServerType::streamable_http(MEMORY_MCP_URL))
         .build()
         .await?;
     Ok(memory_storage_agent)

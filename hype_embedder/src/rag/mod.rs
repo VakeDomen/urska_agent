@@ -37,11 +37,11 @@ impl Rag {
         let loaded_file = load_file(&file)?;
         let chunked_file = chunk(loaded_file, strategy);
         let enriched_file = hype(chunked_file, &self.ollama).await;
-
-        let file = File::create(&format!("./resources/uploaded/result_{}.json", name))?;
-        let mut writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(&mut writer, &enriched_file)?;
-        writer.flush()?;
+        
+        // let file = File::create(&format!("./resources/uploaded/result_{}.json", name))?;
+        // let mut writer = BufWriter::new(file);
+        // serde_json::to_writer_pretty(&mut writer, &enriched_file)?;
+        // writer.flush()?;
 
         let embedded_chunks = prepare_for_upload(enriched_file, &self.ollama).await?;
         insert_chunks_to_qdrant(embedded_chunks).await

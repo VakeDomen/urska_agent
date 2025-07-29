@@ -1203,6 +1203,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum 0.8.4",
  "dotenv",
  "futures",
  "html-escape",
@@ -1901,7 +1902,6 @@ version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37f2048a81a7ff7e8ef6bc5abced70c3d9114c8f03d85d7aaaafd9fd04f12e9e"
 dependencies = [
- "axum 0.8.4",
  "base64",
  "bytes",
  "chrono",
