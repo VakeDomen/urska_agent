@@ -36,6 +36,14 @@ export class ChatComponent implements OnInit {
 
           // Check if this is the final 'Done' notification
           if (
+            'Token' in backendNotification.content
+          ) {
+            console.log(backendNotification.content.Token.value)
+            return
+          }
+
+
+          if (
             backendNotification.agent === 'Urška' && // Changed from '===' to 'startsWith' for more flexibility
             'Done' in backendNotification.content &&
             Array.isArray(backendNotification.content.Done)
@@ -49,14 +57,21 @@ export class ChatComponent implements OnInit {
             this.isProcessing = false;
             this.sideOpen = false;
           } else {
-            // It's a regular progress notification
+            const arrivalTime = Date.now();
+            const lastNotification = this.notifications[this.notifications.length - 1];
+            const timeDelta = lastNotification 
+              ? (arrivalTime - lastNotification.arrivalTime) / 1000 
+              : undefined;
+
             this.notifications.push({
               ...backendNotification,
               id: this.notifications.length,
-              expanded: false, 
+              expanded: false,
               rawExpanded: false,
               systemPromptVisible: false,
               taskVisible: false,
+              arrivalTime, 
+              timeDelta,
             });
           }
         }

@@ -49,6 +49,7 @@ pub async fn vector_search(embedding: EmbeddingVector) -> Result<SearchResponse>
 }
 
 pub async fn vector_search_k(embedding: EmbeddingVector, k: u64) -> Result<SearchResponse> {
+    println!("K: {k}");
     let client = QDRANT_CLIENT.lock().await;
     let mut embedding: SearchPoints = embedding.into();
     embedding.limit = k;

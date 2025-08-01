@@ -5,10 +5,11 @@ use serde_json::Value;
 #[derive(Debug, Serialize)]
 pub struct ResultChunk {
     pub id: String,
-    pub doc_id: String,
-    pub doc_seq_num: i32,
-    pub content: String,
-    pub additional_data: Value,
+    pub question: String,
+    pub document_id: String,
+    pub chunk: String,
+    pub seq_num: i32,
+    pub document_name: String,
     pub score: f32,
 }
 
@@ -19,33 +20,42 @@ impl From<ScoredPoint> for ResultChunk {
             None => "Unknown".into(),
         };
 
-        let doc_id = match value.payload.get("doc_id") {
-            Some(d) => d.as_str().map_or("Unknown", |v| v),
-            None => "Unknown",
+        let question = match value.payload.get("question") {
+            Some(d) => d.as_str().map_or("Unknown", |v| v).to_owned(),
+            None => "Unknown".to_owned(),
         };
-        let doc_id = doc_id.to_string();
+        
+        let document_id = match value.payload.get("document_id") {
+            Some(d) => d.as_str().map_or("Unknown", |v| v).to_owned(),
+            None => "Unknown".to_owned(),
+        };
 
-        let doc_seq_num = match value.payload.get("doc_seq_num") {
+        
+        let chunk = match value.payload.get("chunk") {
+            Some(d) => d.as_str().map_or("Unknown", |v| v).to_owned(),
+            None => "Unknown".to_owned(),
+        };
+
+        let seq_num = match value.payload.get("seq_num") {
             Some(d) => d.as_integer().unwrap_or(-1) as i32,
             None => -1,
         };
 
-        let content: String = match value.payload.get("content") {
-            Some(d) => d.as_str().map_or("".into(), |v| v.into()),
-            None => "".into(),
-        };
-
-        let additional_data = match value.payload.get("additional_data") {
-            Some(d) => d.to_owned(),
-            None => Value::Null.into(),
+        let document_name = match value.payload.get("document_name") {
+            Some(d) => d.as_str().map_or("Unknown", |v| v)
+                .to_owned()
+                .replace("_", "/")
+                .replace(".md", ""),
+            None => "Unknown".to_owned(),
         };
 
         Self {
             id,
-            doc_id,
-            doc_seq_num,
-            content,
-            additional_data: additional_data.into(),
+            question,
+            document_id,
+            chunk,
+            seq_num,
+            document_name,
             score: value.score,
         }
     }
@@ -55,8 +65,7 @@ impl Into<String> for &ResultChunk {
     fn into(self) -> String {
         format!(r#"
             ---
-            Document containing this passage: {}
-            Metadata: {:#?}
+            Source: {}
 
             Passage content: 
             
@@ -65,9 +74,8 @@ impl Into<String> for &ResultChunk {
             ---
 
             "#,
-            self.doc_id,
-            self.additional_data,
-            self.content
+            self.document_name,
+            self.chunk
         )
     }
 }

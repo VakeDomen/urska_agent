@@ -18,7 +18,7 @@ pub mod processing;
 
 pub use models::RagProcessableFile;
 
-use crate::rag::comm::qdrant::vector_search_k;
+use crate::rag::{comm::qdrant::vector_search_k, models::chunks::ResultChunk};
 
 #[derive(Debug, Default)]
 pub struct Rag {
@@ -64,18 +64,14 @@ impl Rag {
         }
     }
 
-    pub async fn search_k(&self, query: String, k: u64) -> Result<SearchResult> {
+    pub async fn search_k(&self, query: String, k: u64) -> Result<Vec<ResultChunk>> {
         let emb_query = GenerateEmbeddingsRequest::new("bge-m3".to_owned(), EmbeddingsInput::Single(query.clone()));
         let embedding = match self.ollama.embed(emb_query).await {
             Ok(resp) => EmbeddingVector(resp.embeddings[0].clone()),
             Err(e) => return Err(anyhow!(format!("Failed embedding the query: {}", e))),
         };
         let resp = vector_search_k(embedding, k).await?;
-        let resp = dedup(resp);
-        println!("{:#?}", resp);
-        match prompt(query, resp, &self.ollama).await {
-            Ok(r) => Ok(r),
-            Err(e) => Err(anyhow!(e.to_string())),
-        }
+        println!("HITS: {:#?}", resp);
+        Ok(dedup(resp))
     }
 }

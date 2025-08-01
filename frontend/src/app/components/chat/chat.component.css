@@ -80,6 +80,7 @@
 }
 
 .side-panel-content {
-  flex-grow: 1;
-  overflow-y: auto;
+  flex: 1;
+  display: flex; /* Make it a flex container to manage its child */
+  overflow: hidden; /* Remove overflow-y and just hide any potential overflow */
 }

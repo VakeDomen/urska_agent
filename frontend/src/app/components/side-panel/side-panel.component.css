@@ -1,8 +1,13 @@
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1; /* Make the component fill the parent's space */
+  min-height: 0;
 }
 
 .notifications-list {
+  flex: 1; /* Make the list grow to fill the component */
+  overflow-y: auto; /* 👈 This makes the list itself scrollable */
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -115,3 +120,22 @@ pre.raw-json {
   background-color: #212529;
   color: #f8f9fa;
 }
+
+
+.time-delta {
+  font-size: 0.8em;
+  font-weight: 700;
+  font-family: monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: #f1f1f1;
+}
+
+
+/* .delta-gray { color: #6c757d; } */
+.delta-gray { color: #21c076; }
+.delta-green { color: #198754; }
+.delta-green-yellow { color: #789423; }
+.delta-yellow { color: #ffc107; }
+.delta-orange { color: #fd7e14; }
+.delta-red { color: #dc3545; }

@@ -55,7 +55,7 @@ impl Service {
         } 
     }
 
-    #[tool(description = "Consult knowledge base. Given a question will return 'k' pessages that may contain answers. Keep questions percise with long forms of named entities.")]
+    #[tool(description = "Consult knowledge base. Given a question will return 'k' pessages that may contain answers. Keep questions percise with long forms and named entities. Recommended k is 1 or 2")]
     pub async fn rag_lookup(
         &self, 
         Parameters(StructRequest{question, k}): Parameters<StructRequest>,
@@ -70,10 +70,9 @@ impl Service {
             Err(e) => return Ok(CallToolResult::error(vec![Content::text(e.to_string())])),
         };
 
-        let resp = results
-            .chunks
+        let resp: Vec<Content> = results
             .iter()
-            .map(|c| Content::text(c.content.clone()))
+            .map(|c| Content::text::<String>(c.into()))
             .collect();
 
         Ok(CallToolResult::success(resp))

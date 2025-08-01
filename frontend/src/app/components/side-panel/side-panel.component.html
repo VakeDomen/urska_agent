@@ -1,9 +1,20 @@
-<div class="notifications-list">
-  <div *ngFor="let n of notifications; trackBy: trackById" class="notification-item">
+<div class="notifications-list" #notificationsList>
+  <div 
+    #notificationItem
+    *ngFor="let n of notifications; trackBy: trackById" 
+    class="notification-item"
+    [@slideIn]
+    >
     
     <div class="notification-header" (click)="toggle(n)">
       <span class="agent-name">{{ n.agent }}</span>
       <span class="summary">{{ getNotificationSummary(n.content) }}</span>
+      <span 
+        *ngIf="n.timeDelta !== undefined" 
+        class="time-delta" 
+        [ngClass]="getDeltaColorClass(n.timeDelta)">
+        +{{ n.timeDelta.toFixed(1) }}s
+      </span>
       <span class="arrow">{{ n.expanded ? '▼' : '▶' }}</span>
     </div>
 

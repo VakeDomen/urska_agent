@@ -8,12 +8,13 @@ use anyhow::Result;
 use serde::{de::IntoDeserializer, Deserialize};
 use tokio::sync::Mutex;
 
-use crate::peers::CLIENT_PEERS;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
 
-mod peers;
+use crate::usrka::build_urska;
+
+mod usrka;
 
 const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";
 const MEMORY_URL: &str = "http://localhost:8002/mcp";
@@ -47,23 +48,9 @@ You are **Urška**, a helpful, knowledgeable, and reliable assistant for the Uni
         
     // --- Agent Definition ---
     
-    let agent = AgentBuilder::plan_and_execute()
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
-        .set_name("Urška")
-        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
-        .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
-        .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
-        .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
-        .add_mcp_server(McpServerType::streamable_http(MEMORY_URL))
-        .add_mcp_server(McpServerType::streamable_http(RAG_SERVICE))
-        .build()
-        .await?;
+    let agent = build_urska().await?;
 
     let conn_counter = Arc::new(AtomicI32::new(0));
-
-    // let ct = SseServer::serve(BIND_ADDRESS.parse()?)
-    //     .await?
-    //     .with_service(move || Service::new(agent.clone(), conn_counter.clone()));
 
     let service = StreamableHttpService::new(
         move || Ok(Service::new(agent.clone(), conn_counter.clone())),
@@ -85,7 +72,6 @@ You are **Urška**, a helpful, knowledgeable, and reliable assistant for the Uni
     println!("- Memory at {}", MEMORY_URL);
 
     tokio::signal::ctrl_c().await?;
-    // ct.cancel();
 
     Ok(())
 }

@@ -6,7 +6,8 @@ export type NotificationContent =
   | { ToolCallRequest: { function: { name: string; arguments: any } } }
   | { ToolCallSuccessResult: string }
   | { ToolCallErrorResult: string }
-  | { McpToolNotification: string };
+  | { McpToolNotification: string }
+  | { Token: { key: string, value: string } };
 export interface BackendNotification {
   agent: string;
   content: NotificationContent;
@@ -21,5 +22,7 @@ export interface Notification extends BackendNotification {
   expanded: boolean;
   rawExpanded: boolean;
   systemPromptVisible: boolean;
-  taskVisible: boolean
+  taskVisible: boolean;
+  arrivalTime: number;
+  timeDelta?: number;
 }
