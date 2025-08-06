@@ -1,4 +1,4 @@
-# qdrant:    ./qdrant.sh
+qdrant:    ./qdrant.sh
 
 memory:    bash wait-port.sh 127.0.0.1 6333 && cd mcp-memory  && cargo run --release
 scraper:   cd mcp-scraper && cargo run --release

@@ -7,7 +7,8 @@
        }">
     <div class="message-row">
       <div *ngIf="msg.role === 'assistant'" class="message-bubble">
-        <markdown [data]="msg.content"></markdown>
+        <div *ngIf="!msg.content" class="loader"></div>
+        <markdown *ngIf="msg.content" [data]="msg.content"></markdown>
       </div>
       <div *ngIf="msg.role === 'user'" class="message-bubble">
         {{ msg.content }}

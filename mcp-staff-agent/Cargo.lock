@@ -1428,8 +1428,8 @@ dependencies = [
 
 [[package]]
 name = "reagent"
-version = "0.1.2"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#f6f840831a864fd722e87653fda509d97ac517ba"
+version = "0.1.4"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#f941493715dac097ec421d497c5109ddc7351985"
 dependencies = [
  "async-stream",
  "futures",

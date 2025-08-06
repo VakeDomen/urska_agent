@@ -1,11 +1,9 @@
 use std::{collections::HashMap, fmt::format};
 
+use axum::http::response;
+use reagent::{configs::PromptConfig, error::{AgentBuildError, AgentError}, flow_types::{Flow, FlowFuture}, invocations::{invoke_with_tool_calls, invoke_without_tools}, prebuilds::StatelessPrebuild, util::Template, Agent, AgentBuilder, McpServerType, Message, Notification, NotificationContent};
 use serde_json::Value;
 use tokio::sync::mpsc::Receiver;
-
-use reagent::{
-    models::{agents::flow::invocation_flows::{Flow, FlowFuture}, configs::PromptConfig, AgentBuildError, AgentError}, prebuilds::{statefull::StatefullPrebuild, stateless::StatelessPrebuild}, util::{invocations::{call_tools, invoke_without_tools}, templating::Template}, Agent, AgentBuilder, McpServerType, Message, Notification, NotificationContent
-};
 
 use crate::{MEMORY_URL, PROGRAMME_AGENT_URL, RAG_SERVICE, SCRAPER_AGENT_URL, STAFF_AGENT_URL};
 
@@ -24,6 +22,13 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) ->
         agent.forward_notifications(replanner_notification_channel);
         agent.forward_notifications(executor_notification_channel);
 
+        // agent.forward_multiple_notifications(vec![
+        //     blueprint_notification_channel,
+        //     planner_notification_channel,
+        //     replanner_notification_channel,
+        //     executor_notification_channel,
+        // ]);
+
         let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
             ("tools", format!("{:#?}", agent.tools)),
             ("prompt", prompt.clone())
@@ -34,7 +39,7 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) ->
             return Err(AgentError::RuntimeError("Blueprint was not created".into()));
         };
 
-
+        planner_agent.history = vec![Message::developer(planner_agent.system_prompt.clone())];
         let plan_content = planner_agent.invoke_flow_with_template(HashMap::from([
             ("tools", format!("{:#?}", agent.tools)),
             ("prompt", blueprint)
@@ -77,6 +82,7 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) ->
             //         agent.history.push(tool_msg);
             //     }
             // } 
+
 
             
 
@@ -193,9 +199,10 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
         .set_system_prompt(system_prompt)
         .set_flow(Flow::Custom(plan_and_execute_flow))
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gpt-oss:120b")
         // .set_model("qwen3:0.6b")
         .set_name("Urška")
-        // .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
+        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
@@ -328,7 +335,6 @@ Good `"Use get_web_page_content to retrieve https://www.famnit.upr.si/en/educati
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_clear_history_on_invocation(true)
-        .set_model(ref_agent.model.clone())
         .build_with_notification()
         .await
 }
@@ -630,7 +636,8 @@ Correct new JSON plan output
             "required": ["steps"]
         }
         "#)
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gpt-oss:120b")
         .set_clear_history_on_invocation(true)
         .build_with_notification()
         .await
@@ -675,20 +682,33 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 
 * Include **all** relevant links you uncovered; every link must originate from the tool outputs shown in the conversation.  
 * Respond in valid Markdown exactly as illustrated above.
+* Its extremely important all links are correctly written. 
 
 
     "#;
 
-    StatelessPrebuild::call_tools_and_reply()
+    AgentBuilder::default()
         .import_ollama_config(ollama_config)
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         // .set_model("qwen3:8b")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gpt-oss:120b")
         .set_name("Step executor")
         .set_system_prompt(system_prompt)
+        .set_flow(Flow::Custom(executor_flow))
         .set_clear_history_on_invocation(true)
         .build_with_notification()
         .await
 }
 
+
+fn executor_flow<'a>(agent: &'a mut Agent, prompt: String) -> FlowFuture<'a> {
+    Box::pin(async move {
+        agent.history.push(Message::user(prompt));
+        let _ = invoke_with_tool_calls(agent).await?;
+        let response = invoke_without_tools(agent).await?;
+        agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
+        Ok(response.message)
+    })   
+}

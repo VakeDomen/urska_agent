@@ -3,7 +3,10 @@
   <div class="chat-wrapper">
 
     <div class="chat-container">
-      <message-list [messages]="messages"></message-list>
+      <message-list 
+        [messages]="messages"
+        [newToken]="lastToken"  
+      ></message-list>
       <chat-input (send)="sendPrompt($event)"></chat-input>
     </div>
     

@@ -1,4 +1,4 @@
-import { Component, Input, SecurityContext } from '@angular/core'
+import { Component, Input, OnChanges, SecurityContext, SimpleChanges } from '@angular/core'
 import { CommonModule } from '@angular/common'
 import { trigger, style, transition, animate } from '@angular/animations'
 import { Message } from '../../models/message.model'
@@ -23,6 +23,14 @@ import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown'
     ])
   ]
 })
-export class MessageListComponent {
+export class MessageListComponent implements OnChanges {
+  
   @Input() messages: Message[] = []
+  @Input() newToken: String | undefined;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (this.messages.length) {
+      this.messages[this.messages.length - 1].content += changes['newToken'].currentValue;
+    }
+  }
 }

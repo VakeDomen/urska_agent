@@ -24,24 +24,23 @@ import { Subscription } from 'rxjs';
     ])
   ]
 })
-export class SidePanelComponent implements AfterViewInit, OnDestroy {
+export class SidePanelComponent implements AfterViewInit, OnDestroy, OnChanges {
+
   @Input() notifications: Notification[] = [];
   @ViewChild('notificationsList') private listContainer!: ElementRef;
   @ViewChildren('notificationItem') private items!: QueryList<ElementRef>;
   
-  // 5. This hook runs once after the view is initialized
-  private itemsSub!: Subscription;
+  ngOnChanges(changes: SimpleChanges): void {
+    console.log(changes)
+  }
 
+  private itemsSub!: Subscription;
   ngAfterViewInit(): void {
-    // Scroll once for the initial list
     this.scrollToBottom();
-    // Subscribe to any changes in the list of items
     this.itemsSub = this.items.changes.subscribe(() => this.scrollToBottom());
   }
 
-  // 6. This hook runs when the component is destroyed
   ngOnDestroy(): void {
-    // Unsubscribe to prevent memory leaks
     if (this.itemsSub) {
       this.itemsSub.unsubscribe();
     }

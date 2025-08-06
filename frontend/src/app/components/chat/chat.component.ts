@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MessageListComponent } from '../message-list/message-list.component';
 import { ChatInputComponent } from '../chat-input/chat-input.component';
@@ -16,13 +16,15 @@ import { Notification, BackendNotification } from '../../models/notification.mod
     SidePanelComponent,
   ],
   templateUrl: './chat.component.html',
-  styleUrls: ['./chat.component.css']
+  styleUrls: ['./chat.component.css'],
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ChatComponent implements OnInit {
-  messages: Message[] = [];
-  notifications: Notification[] = [];
-  sideOpen = false;
-  isProcessing = false; // New state to lock the panel open during a request
+  public messages: Message[] = [];
+  public notifications: Notification[] = [];
+  public lastToken: String | undefined;
+  public sideOpen = false;
+  public isProcessing = false;
   private socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
 
   constructor(private cdr: ChangeDetectorRef) {}
@@ -36,12 +38,17 @@ export class ChatComponent implements OnInit {
 
           // Check if this is the final 'Done' notification
           if (
+            backendNotification.agent === 'Urška' &&
             'Token' in backendNotification.content
           ) {
-            console.log(backendNotification.content.Token.value)
+            this.lastToken = backendNotification.content.Token.value;
+            this.cdr.detectChanges();
             return
           }
 
+          if ('Token' in backendNotification.content) {
+            return;
+          }
 
           if (
             backendNotification.agent === 'Urška' && // Changed from '===' to 'startsWith' for more flexibility
@@ -49,11 +56,11 @@ export class ChatComponent implements OnInit {
             Array.isArray(backendNotification.content.Done)
           ) {
             // It's the final answer. Add it to chat and close the panel.
-            this.messages.push({
-              role: 'assistant',
-              content: backendNotification.content.Done[1],
-              timestamp: new Date(),
-            });
+            // this.messages.push({
+            //   role: 'assistant',
+            //   content: backendNotification.content.Done[1],
+            //   timestamp: new Date(),
+            // });
             this.isProcessing = false;
             this.sideOpen = false;
           } else {
@@ -76,9 +83,7 @@ export class ChatComponent implements OnInit {
           }
         }
         
-        setTimeout(() => {
-          this.cdr.detectChanges();
-        });
+        this.cdr.detectChanges();
     };
   }
 
@@ -90,6 +95,12 @@ export class ChatComponent implements OnInit {
       content: prompt,
       timestamp: new Date(),
     });
+
+    this.messages.push({
+      role: 'assistant',
+      content: "",
+      timestamp: new Date(),
+    })
     
     // Clear old notifications and open the panel for the new request
     this.notifications = [];
