@@ -1,20 +1,33 @@
 <div class="page-container">
-
   <div class="chat-wrapper">
+
+    <aside
+      class="side-panel-container left"
+      [class.open]="leftSideOpen"
+      (mouseenter)="handleLeftPanelEnter()"
+      (mouseleave)="handleLeftPanelLeave()">
+
+      <div class="side-panel-header">
+        <h3>Tool Results</h3>
+      </div>
+      <div class="side-panel-content">
+        <side-panel [notifications]="resultNotifications"></side-panel>
+      </div>
+    </aside>
 
     <div class="chat-container">
       <message-list 
         [messages]="messages"
         [newToken]="lastToken"  
       ></message-list>
-      <chat-input (send)="sendPrompt($event)"></chat-input>
+      <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
     </div>
     
     <aside 
-      class="side-panel-container" 
-      [class.open]="sideOpen"
-      (mouseenter)="handlePanelEnter()"
-      (mouseleave)="handlePanelLeave()">
+      class="side-panel-container right" 
+      [class.open]="rightSideOpen"
+      (mouseenter)="handleRightPanelEnter()"
+      (mouseleave)="handleRightPanelLeave()">
       
       <div class="side-panel-header">
         <h3>Agent Activity</h3>

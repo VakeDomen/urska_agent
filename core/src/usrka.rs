@@ -1,33 +1,49 @@
 use std::{collections::HashMap, fmt::format};
 
 use axum::http::response;
-use reagent::{configs::PromptConfig, error::{AgentBuildError, AgentError}, flow_types::{Flow, FlowFuture}, invocations::{invoke_with_tool_calls, invoke_without_tools}, prebuilds::StatelessPrebuild, util::Template, Agent, AgentBuilder, McpServerType, Message, Notification, NotificationContent};
+use reagent::{agent, configs::PromptConfig, error::{AgentBuildError, AgentError}, flow_types::{Flow, FlowFuture}, invocations::{invoke_with_tool_calls, invoke_without_tools}, prebuilds::StatelessPrebuild, util::Template, Agent, AgentBuilder, McpServerType, Message, Notification, NotificationContent, Role};
+use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::mpsc::Receiver;
 
-use crate::{MEMORY_URL, PROGRAMME_AGENT_URL, RAG_SERVICE, SCRAPER_AGENT_URL, STAFF_AGENT_URL};
+use crate::{MEMORY_URL, PROGRAMME_AGENT_URL, RAG_FAQ_SERVICE, RAG_PAGE_SERVICE, RAG_RULES_SERVICE, SCRAPER_AGENT_URL, STAFF_AGENT_URL};
 
+#[derive(Debug, Deserialize)]
+struct Plan {
+  pub steps: Vec<Vec<String>>,
+}
 
-pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) -> FlowFuture<'a> {
+pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String) -> FlowFuture<'a> {
     Box::pin(async move {
+        agent.history.push(Message::user(prompt.clone()));
+
         let mut past_steps: Vec<(String, String)> = Vec::new();
+        let mut flow_histroy: Vec<Message> = Vec::new();
         
+        let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&agent).await?;
         let (mut blueprint_agent, blueprint_notification_channel) = create_blueprint_agent(agent).await?;
         let (mut planner_agent, planner_notification_channel) = create_planner_agent(agent).await?;
         let (mut replanner_agent, replanner_notification_channel) = create_replanner_agent(agent).await?;
         let (mut executor_agent, executor_notification_channel) = create_single_task_agent(agent).await?;
 
+        agent.forward_notifications(rephraser_notification_channel);
         agent.forward_notifications(blueprint_notification_channel);
         agent.forward_notifications(planner_notification_channel);
         agent.forward_notifications(replanner_notification_channel);
         agent.forward_notifications(executor_notification_channel);
 
-        // agent.forward_multiple_notifications(vec![
-        //     blueprint_notification_channel,
-        //     planner_notification_channel,
-        //     replanner_notification_channel,
-        //     executor_notification_channel,
-        // ]);
+        //more than system + first prompt
+        if agent.history.len() > 2 {
+          let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
+            ("history", history_to_prompt(&agent.history)),
+            ("prompt", prompt.clone())
+          ])).await?;
+
+          if let Some(rephrased_prompt) = rehprase_response.content {
+            prompt = rephrased_prompt;
+          }
+        }
+
 
         let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
             ("tools", format!("{:#?}", agent.tools)),
@@ -39,25 +55,21 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) ->
             return Err(AgentError::RuntimeError("Blueprint was not created".into()));
         };
 
-        planner_agent.history = vec![Message::developer(planner_agent.system_prompt.clone())];
-        let plan_content = planner_agent.invoke_flow_with_template(HashMap::from([
+        let mut plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
             ("tools", format!("{:#?}", agent.tools)),
             ("prompt", blueprint)
         ])).await?;
-
-        let mut plan = get_plan_from_response(&plan_content)?;
-        
 
         
         for iteration in 1.. {
              
 
-            if plan.is_empty() {
+            if plan.steps.is_empty() {
                 break;
             }
 
             // put the step instruction to the overarching agent history
-            let current_steps = plan.remove(0);
+            let current_steps = plan.steps.remove(0);
             
             if current_steps.is_empty() {
                 break;
@@ -69,30 +81,15 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) ->
                 current_steps[0].clone()
             };
 
-            agent.history.push(Message::user(current_step.clone()));
+            // flow_histroy.push(Message::user(current_step.clone()));
 
-            // execute the step and put response to the overarching agent history
-            let response = executor_agent.invoke_flow(current_step.clone()).await?;
-
-            // let mut step_result = format!("# response \n {:#?}", response.content);
-
-            // if let Some(tc) = response.tool_calls.clone() {
-            //     for tool_msg in call_tools(&executor_agent, &tc).await {
-            //         step_result = format!("{}\n\n## Tool result:\n\n{:#?}", step_result, tool_msg.content);
-            //         agent.history.push(tool_msg);
-            //     }
-            // } 
-
-
-            
-
-            agent.history.push(response.clone());
+            // execute the step
+            let response = executor_agent.invoke_flow(current_step.clone()).await?;        
+            flow_histroy.push(response.clone());
 
 
             let observation = response.content.clone().unwrap_or_default();
             past_steps.push((current_step, observation));
-            // past_steps.push((current_step, step_result));
-
             
             let past_steps_str = past_steps
                .iter()
@@ -108,20 +105,23 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, prompt: String) ->
             }
 
 
-            let new_plan_content = replanner_agent.invoke_flow_with_template(HashMap::from([
+            plan = replanner_agent.invoke_flow_with_template_structured_output(HashMap::from([
                 ("tools", format!("{:#?}", agent.tools)),
                 ("prompt", prompt.clone()),
                 ("plan", format!("{plan:#?}")),
                 ("past_steps", past_steps_str),
             ])).await?;
-            plan = get_plan_from_response(&new_plan_content)?;
         }
 
 
         if past_steps.last().is_some() {
 
-            agent.history.push(Message::user(prompt.to_string()));
+            flow_histroy.push(Message::user(prompt.to_string()));
+            let mut conversation_history = agent.history.clone();
+            agent.history = flow_histroy;
             let response = invoke_without_tools(agent).await?;
+            conversation_history.push(response.message.clone());
+            agent.history = conversation_history;
 
             agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
             Ok(response.message)
@@ -207,37 +207,19 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
         .add_mcp_server(McpServerType::streamable_http(MEMORY_URL))
-        .add_mcp_server(McpServerType::streamable_http(RAG_SERVICE))
+        .add_mcp_server(McpServerType::streamable_http(RAG_PAGE_SERVICE))
+        .add_mcp_server(McpServerType::streamable_http(RAG_RULES_SERVICE))
+        .add_mcp_server(McpServerType::streamable_http(RAG_FAQ_SERVICE))
         .set_temperature(0.7)
         .set_top_p(0.8)
         .set_top_k(20)
         .set_min_p(0.0)
         .set_presence_penalty(0.1)
-        .set_max_iterations(3)
+        .set_max_iterations(2)
         .set_stream(true)
         .build()
         .await
         
-}
-
-fn get_plan_from_response(plan_response: &Message) -> Result<Vec<Vec<String>>, AgentError> {
-    let original_plan_string = plan_response.content.clone().unwrap_or_default();
-
-    let plan_value: Value = serde_json::from_str(&original_plan_string).map_err(|e| {
-        AgentError::RuntimeError(format!("Planner failed to return valid JSON: {e}"))
-    })?;
-
-    let steps_value = plan_value.get("steps").ok_or_else(|| {
-        AgentError::RuntimeError("JSON object is missing the required 'steps' key.".to_string())
-    })?;
-
-    let steps: Vec<Vec<String>> = serde_json::from_value(steps_value.clone()).map_err(|e| {
-        AgentError::RuntimeError(format!(
-            "The 'steps' key is not a valid array of string arrays: {e}"
-        ))
-    })?;
-
-    Ok(steps)
 }
 
 pub async fn create_planner_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
@@ -333,6 +315,7 @@ Good `"Use get_web_page_content to retrieve https://www.famnit.upr.si/en/educati
         }
         "#)
         .set_system_prompt(system_prompt)
+        // .set_model("qwen3:4b-instruct")
         .set_template(template)
         .set_clear_history_on_invocation(true)
         .build_with_notification()
@@ -340,6 +323,88 @@ Good `"Use get_web_page_content to retrieve https://www.famnit.upr.si/en/educati
 }
 
 
+pub async fn create_prompt_restructor_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
+    let ollama_config = ref_agent.export_ollama_config();
+    let model_config = ref_agent.export_model_config();
+    let prompt_config = if let Ok(c) = ref_agent.export_prompt_config().await {
+        c
+    } else {
+        PromptConfig::default()
+    };
+    
+    let system_prompt = r#"You are a rewriting agent. You receive two inputs:
+1) conversation_history: a list of prior messages between the user and assistant
+2) question: the user’s latest message
+
+Goal:
+You respond only with rewriten question so it is fully understandable without reading the conversation history. If the question is already self-contained, return it unchanged.
+
+Rules:
+1) Preserve intent, meaning, and constraints. Do not change the user’s ask, scope, tone, or language.
+2) Expand all anaphora and vague references using only facts found in conversation_history. Replace pronouns and deictic terms with their specific referents, for example:
+   - this, that, these, those, it, they, he, she
+   - here, there, above, below, the previous one
+   - the paper, the repo, the model, the dataset, the meeting
+3) Name entities explicitly. Use full names for people, organizations, models, files, repositories, URLs, and product names if they appear in history. If both a short and long name exist in history, prefer “Full Name (Short Name)” on first mention, then the short name.
+4) Carry forward exact parameters and values from history when the question depends on them, such as versions, dates, amounts, file paths, hyperparameters, environments, and options.
+5) Normalize relative references using only what is in history. Examples: “the draft” becomes “the draft named X.docx”. If a relative time like “tomorrow” appears and the absolute date is not present in history, keep the relative phrase as is. Do not invent dates.
+6) Do not add new facts, speculate, or infer missing details. If a needed detail does not exist in history, omit it rather than guessing.
+7) Remove meta-chat and filler. Exclude “as we discussed earlier” or “from the above”.
+8) Keep formatting simple. Preserve inline code, math, and URLs if present. Do not introduce citations or footnotes.
+9) Output only the final rewritten question as a single message. Do not include explanations of what you changed.
+
+Edge cases:
+• If multiple plausible antecedents exist in history and you cannot disambiguate, keep the user’s wording for that part and remove misleading placeholders rather than guessing.  
+• If the question is already self-contained, return it verbatim.
+
+Examples:
+
+History:
+- User: Can you review the draft I uploaded yesterday?
+- Assistant: Yes, I reviewed “Thesis_Proposal_v3.pdf”.
+Question:
+- Is the abstract fine?
+Rewrite:
+- Is the abstract in “Thesis_Proposal_v3.pdf” fine?
+
+History:
+- User: Let’s use the smaller model. Llama-3.1-8B-Instruct on our A100 box with temperature 0.2.
+Question:
+- Bump it to 0.4 and rerun?
+Rewrite:
+- Bump the temperature to 0.4 and rerun Llama-3.1-8B-Instruct on the A100 machine.
+
+History:
+- User: I shared two links: the course page and the UP FAMNIT rules PDF.
+Question:
+- What does section II say?
+Rewrite:
+- What does section II in the UP FAMNIT rules PDF say?
+
+    "#;
+
+    let template = Template::simple(r#"
+    # History:
+
+    {{history}}
+
+    Users task to create a blueprint for: 
+
+    {{prompt}}
+    "#);
+
+    StatelessPrebuild::reply_without_tools()
+        .import_ollama_config(ollama_config)
+        .import_model_config(model_config)
+        .import_prompt_config(prompt_config)
+        .set_name("Rephraser")
+        .set_model("qwen3:4b-instruct")
+        .set_system_prompt(system_prompt)
+        .set_template(template)
+        .set_clear_history_on_invocation(true)
+        .build_with_notification()
+        .await
+}
 
 pub async fn create_blueprint_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_ollama_config();
@@ -408,6 +473,7 @@ pub async fn create_blueprint_agent(ref_agent: &Agent) -> Result<(Agent, Receive
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Thinker")
+        // .set_model("qwen3:4b-instruct")
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_clear_history_on_invocation(true)
@@ -617,6 +683,7 @@ Correct new JSON plan output
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Plan revisor")
+        // .set_model("qwen3:4b-instruct")
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_response_format(r#"
@@ -636,7 +703,7 @@ Correct new JSON plan output
             "required": ["steps"]
         }
         "#)
-        // .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
         // .set_model("gpt-oss:120b")
         .set_clear_history_on_invocation(true)
         .build_with_notification()
@@ -695,6 +762,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         // .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
         // .set_model("gpt-oss:120b")
         .set_name("Step executor")
+        // .set_model("qwen3:4b-instruct")
         .set_system_prompt(system_prompt)
         .set_flow(Flow::Custom(executor_flow))
         .set_clear_history_on_invocation(true)
@@ -711,4 +779,26 @@ fn executor_flow<'a>(agent: &'a mut Agent, prompt: String) -> FlowFuture<'a> {
         agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
         Ok(response.message)
     })   
+}
+
+
+pub fn history_to_prompt(history: &Vec<Message>) -> String {
+    let mut prompt = String::from("Here is a summary of a conversation.");
+    for msg in history.iter().skip(2) { // Skip the system prompt and the initial memory query result
+        let content = msg.content.clone().unwrap_or_default();
+        match msg.role {
+            Role::User => prompt.push_str(&format!("USER ASKED: {}\n\n", content)),
+            Role::Assistant => prompt.push_str(&format!("ASSISTANT: {}\n\n", content)),
+            Role::Tool => {
+                        let tool_name = msg.tool_call_id.as_deref().unwrap_or("unknown_tool");
+                        prompt.push_str(&format!("TOOL `{:?}` RETURNED:\n{}\n\n", tool_name, content));
+                    }
+            Role::System => continue,
+            Role::Developer => continue,
+        }
+    }
+    prompt.push_str("---\nEnd of conversation summary.");
+
+    println!("CONVO: {}", prompt);
+    prompt
 }

@@ -6,3 +6,6 @@ ollama
 qdrant-client
 python-dotenv
 tqdm
+marker
+marker-pdf
+legacy-cgi

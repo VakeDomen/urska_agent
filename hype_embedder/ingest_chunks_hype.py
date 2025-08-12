@@ -30,7 +30,7 @@ from qdrant_client.http import models as qm
 
 # ==== configuration ====
 load_dotenv()
-DEDUPED_CHUNKS_FILE = Path("deduped_chunks.jsonl")
+DEDUPED_CHUNKS_FILE = Path("chunks_rules.jsonl")
 MAX_WORKERS = int(os.getenv("MAX_WORKERS", "10"))
 PROGRESS_FILE = Path("progress.json")
 OLLAMA_BASE = f'{os.getenv("OLLAMA_HOST")}:{os.getenv("OLLAMA_PORT")}'
@@ -99,129 +99,147 @@ def save_for_review(chunk_data: dict, questions: list[str]) -> None:
 
 def hype_questions(chunk: str) -> list[str]:
     """Generate HyPE questions that start with "-". This is the same as in the provided script."""
-    # system_template = (
-    #     """"
-    #     You will be given a chunk of text relating in some way to UP FAMNIT (University of Primorska - \
-    #     Faculty of Mathematics, Natural Sciences, and Information Technologies). 
-    #     Analyze the input text and generate all questions a student could ask that can be answered by the contents of the text. 
-    #     It's important that the questions be exhaustive and understandable without context. 
-    #     Named entities should always be referenced by their full name or short versions (like FAMNIT), but always referenced. 
-    #     Only answer with questions, where each question should be written on its own line (separated by newline) with prefix: -. 
-    #     It is especially important to generate only questions (many questions) when the text contains a table.
-    #     If a question regards a person, a study program, or a particular year, always state the full name/information 
-    #     in the question, especially regarding study programs. Start with most obvious simple questions and slowly ramp up in complexity.
-    #     Make sure to exhaust all questions.
-    #     -------------- Example Output to follow after  </think>: --------------
-    #     Who is Jernej Vičič?
-    #     What is Eduroam and who can use it?
-    #     What year is the class Applied Statistics offered?
-    #     Who teaches Programming III (3) course?
-    #     Who teaches Analysis III (3) – Functions of Many Variables course?
-    #     How many internally selected elective courses do I have to choose in second year of Computer Science Bachlors?
-    #     What courses are offered in the second year of computer science bachelor's?
-    #     How many elective courses can I select in the third year of bachelor's?
-    #     What is the typical class size for undergraduate courses in Computer Science?
-    #     How is the academic year structured (semesters, exams, etc.)?
-    #     Are there any student organizations or clubs related to Computer Science?
-    #     What kind of career support does UP FAMNIT offer to its students?
-    #     Is it possible to take an internship abroad during the Bachelor's program?
-    #     Where can I find a table of courses offered in the masters program of Bioinformatics?
-    #     Where can I find the official link to the master's thesis guidelines for Mathematical Sciences and Computer Science at UP FAMNIT?
-    #     Where can I find the procedure for submitting a master’s thesis at UP FAMNIT?
-    #     What are the requirements for obtaining a Bachelor’s degree in Computer Science at UP FAMNIT?
-    #     What are the accommodation options for students at UP FAMNIT?
-    #     What are the tuition fees for international students?
-    #     Is there any financial aid or scholarship opportunities available?
-    #     Is there a language requirement for international students?
-    #     What is the grading system used at UP FAMNIT?
-    #     How can I apply for a Bachelor’s program at UP FAMNIT?
-    #     What are the deadlines for applying to the Bachelor’s programs?
-    #     Is there an entrance exam for the Bachelor’s programs?
+
+    # below prompts for page
+
+    # system_template = """
+    # You are a question generation specialist for UP FAMNIT (University of Primorska - Faculty of Mathematics, Natural Sciences, and Information Technologies) student resources.
+    
+    # TASK: Analyze the input text and generate ONLY practical, student-focused questions that can be directly answered by the contents of the text.
+    
+    # CRITICAL RULES:
+    # 1. ONLY generate questions where the complete answer exists in the provided text
+    # 2. NEVER generate philosophical, speculative, or "flavor" questions (e.g., "What is the relationship between...", "What skills are essential for...")
+    # 3. ALWAYS use first-person perspective as if a student is asking ("How many courses must I take...")
+    # 4. ALWAYS reference named entities by full name or appropriate short form (e.g., "UP FAMNIT", "Computer Science Bachelor's program")
+    # 5. FOR study programs, ALWAYS specify the exact program name and level (Bachelors/Masters/PhD) AND year when relevant
+    # 6. FOR tables, generate questions about specific data points but avoid redundant variations
+    # 7. NEVER ask about the document itself (e.g., "What is the name of the study program described in the text?")
+    
+    # QUALITY OVER QUANTITY:
+    # - Focus on generating 15-50 HIGH-QUALITY questions (25 max for small chunks, 70 max for large chunks)
+    # - Prioritize questions students would ACTUALLY ask when navigating university resources
+    # - If the text describes multiple courses taught by a professor, generate ONE question per course (in this case it's allowed to pass the maximum quantitiy)
+    # - If the text contains program requirements, generate questions about specific requirements, not general concepts
+    
+    # BAD EXAMPLES (NEVER GENERATE THESE):
+    # - "What is the relationship between the natural sciences and psychology in the Biopsychology study programme?"
+    # - "What skills are essential for conducting research in biopsychology?"
+    # - "What is the name of the study programme described in the text?"
+    # - "Why is this program important for students?"
+    
+    # GOOD EXAMPLES (GENERATE QUESTIONS LIKE THESE):
+    # - How many elective courses must I select in the second year of the Computer Science Bachelor's program?
+    # - Who teaches Programming III (3) course in the 2023/2024 academic year?
+    # - What are the tuition fees for international students in the Mathematics Master's program?
+    # - Where can I find the application deadline for the Bioinformatics Master's program?
+    # - What is the minimum grade required to pass Analysis I course?
+    
+    # OUTPUT FORMAT:
+    # - ONLY output questions, nothing else
+    # - Each question must be on its own line
+    # - Prefix each question with "- "
+    # - Start with the most basic factual questions, then progress to more specific ones
+    # - Ensure every question is understandable without additional context
+    # """
+    # user_template = ("""
+    # -------------- Text to ask about: START --------------
+    # {chunk}
+    # -------------- Text to ask about: END --------------
+    
+    # -------------- Processing Instructions --------------
+    # 1. Scan the text for concrete facts, requirements, dates, people, and program details
+    # 2. Generate ONLY questions where the answer is explicitly stated in the text
+    # 3. For program information, always include: 
+    #    - Program level (Bachelors/Masters/PhD)
+    #    - Full program name
+    #    - Specific year if mentioned
+    #    - Specific academic year if relevant
+    # 4. For courses, generate questions about:
+    #    - Course instructors
+    #    - Credit values
+    #    - Prerequisites
+    #    - When offered (semester/year)
+    #    - Requirements to pass
+    # 5. For people, generate questions about:
+    #    - Their role/position
+    #    - Courses they teach
+    #    - Contact information
+    #    - Office hours
+    # 6. For tables, generate questions about specific data points, NOT the table structure
+    # 7. STOP generating when you reach 20 questions for small chunks or 70 for large chunks
+    # 8. NEVER generate more than one question for the same fact
+    
+    # REMEMBER: 
+    #     - Only generate questions a student would actually ask when trying to navigate university resources.
+    #     - We are cuttently in academic year 2024-25
+    
+    # Generate relevant questions now.
     #     """
     # )
 
+
     system_template = """
-    You are a question generation specialist for UP FAMNIT (University of Primorska - Faculty of Mathematics, Natural Sciences, and Information Technologies) student resources.
-    
-    TASK: Analyze the input text and generate ONLY practical, student-focused questions that can be directly answered by the contents of the text.
-    
-    CRITICAL RULES:
-    1. ONLY generate questions where the complete answer exists in the provided text
-    2. NEVER generate philosophical, speculative, or "flavor" questions (e.g., "What is the relationship between...", "What skills are essential for...")
-    3. ALWAYS use first-person perspective as if a student is asking ("How many courses must I take...")
-    4. ALWAYS reference named entities by full name or appropriate short form (e.g., "UP FAMNIT", "Computer Science Bachelor's program")
-    5. FOR study programs, ALWAYS specify the exact program name and level (Bachelors/Masters/PhD) AND year when relevant
-    6. FOR tables, generate questions about specific data points but avoid redundant variations
-    7. NEVER ask about the document itself (e.g., "What is the name of the study program described in the text?")
-    
-    QUALITY OVER QUANTITY:
-    - Focus on generating 15-50 HIGH-QUALITY questions (25 max for small chunks, 70 max for large chunks)
-    - Prioritize questions students would ACTUALLY ask when navigating university resources
-    - If the text describes multiple courses taught by a professor, generate ONE question per course (in this case it's allowed to pass the maximum quantitiy)
-    - If the text contains program requirements, generate questions about specific requirements, not general concepts
-    
-    BAD EXAMPLES (NEVER GENERATE THESE):
-    - "What is the relationship between the natural sciences and psychology in the Biopsychology study programme?"
-    - "What skills are essential for conducting research in biopsychology?"
-    - "What is the name of the study programme described in the text?"
-    - "Why is this program important for students?"
-    
-    GOOD EXAMPLES (GENERATE QUESTIONS LIKE THESE):
-    - How many elective courses must I select in the second year of the Computer Science Bachelor's program?
-    - Who teaches Programming III (3) course in the 2023/2024 academic year?
-    - What are the tuition fees for international students in the Mathematics Master's program?
-    - Where can I find the application deadline for the Bioinformatics Master's program?
-    - What is the minimum grade required to pass Analysis I course?
-    
-    OUTPUT FORMAT:
-    - ONLY output questions, nothing else
-    - Each question must be on its own line
-    - Prefix each question with "- "
-    - Start with the most basic factual questions, then progress to more specific ones
-    - Ensure every question is understandable without additional context
-    """
-    user_template = ("""
-    -------------- Text to ask about: START --------------
-    {chunk}
-    -------------- Text to ask about: END --------------
-    
-    -------------- Processing Instructions --------------
-    1. Scan the text for concrete facts, requirements, dates, people, and program details
-    2. Generate ONLY questions where the answer is explicitly stated in the text
-    3. For program information, always include: 
-       - Program level (Bachelors/Masters/PhD)
-       - Full program name
-       - Specific year if mentioned
-       - Specific academic year if relevant
-    4. For courses, generate questions about:
-       - Course instructors
-       - Credit values
-       - Prerequisites
-       - When offered (semester/year)
-       - Requirements to pass
-    5. For people, generate questions about:
-       - Their role/position
-       - Courses they teach
-       - Contact information
-       - Office hours
-    6. For tables, generate questions about specific data points, NOT the table structure
-    7. STOP generating when you reach 20 questions for small chunks or 70 for large chunks
-    8. NEVER generate more than one question for the same fact
-    
-    REMEMBER: 
-        - Only generate questions a student would actually ask when trying to navigate university resources.
-        - We are cuttently in academic year 2024-25
-    
-    Generate relevant questions now.
-        """
-    )
+    You are a question generation specialist for UP FAMNIT (University of Primorska - Faculty of Mathematics, Natural Sciences, and Information Technologies) student rules, regulations, and official acts.
+
+TASK:
+Analyze the provided rule, regulation, or act text and generate ONLY realistic, specific, and practical questions a student might ask when trying to understand or apply these rules.
+
+CRITICAL RULES:
+1. Only generate questions where the complete answer is explicitly stated in the provided text — no speculation or interpretation.
+2. Always phrase from a student’s perspective in first person ("How can I...", "What is the procedure for...", "Am I allowed to...").
+3. Always use full official names when referring to statuses, committees, documents, or acts.
+4. For rights/obligations/duties, generate direct "Do I have the right to..." or "Am I required to..." questions.
+5. For procedures, include the when, where, and to whom details exactly as described in the text.
+6. For eligibility criteria, generate questions that ask "Am I eligible for..." or "What evidence must I provide for...".
+7. If time limits or durations are stated, include them exactly in the question.
+8. If different categories of students are listed (e.g., athletes, artists), make separate questions for each.
+9. Avoid paraphrasing the same fact in multiple ways.
+
+QUALITY OVER QUANTITY:
+- For small chunks, generate 15–25 high-quality, unique questions.
+- For large chunks, generate up to 70 high-quality questions.
+- Start with general/eligibility questions, then procedural, then rights/obligations.
+- Every question must make sense without extra context outside the chunk.
+
+BAD EXAMPLES (NEVER GENERATE):
+- "What does Article 5 mean?"
+- "Why is this rule important?"
+- "Can you summarize the criteria?"
+
+GOOD EXAMPLES (GENERATE QUESTIONS LIKE THESE):
+- What criteria must I meet to obtain the student status of categorised athlete at the University of Primorska?
+- How long does the student status of recognised artist and cultural worker last?
+- Who decides whether I am granted special student status?
+- What documents must I submit to prove I am a student parent?
+- Can I apply for special status outside the regular enrolment period?
+- What rights do students with special status have regarding exam scheduling?
+
+OUTPUT FORMAT:
+- ONLY output questions, nothing else.
+- Each question on its own line, prefixed with "- ".
+- Keep exact terms and numbers from the text (e.g., "eight (8) days").
+- Do not include section or article numbers in the question unless necessary for clarity.
+
+"""
+    user_template = """
+-------------- Text to ask about: START --------------
+{chunk}
+-------------- Text to ask about: END --------------
+
+Generate the list of student-focused questions according to the rules above.
+""".strip()
+
+    # 2) escape braces in the chunk so the formatter never sees them
+    safe_chunk = chunk.replace("{", "{{").replace("}", "}}")
+
     prompt = ChatPromptTemplate.from_messages(
         [
             SystemMessagePromptTemplate.from_template(system_template),
             HumanMessagePromptTemplate.from_template(user_template),
         ]
     )
-    message = prompt.format_prompt(chunk=chunk).to_messages()
+    message = prompt.format_prompt(chunk=safe_chunk).to_messages()
     now = datetime.now()
     cleaned = llm.invoke(message).content.strip()
     # cleaned = THINK_BLOCKS.sub("", raw).strip()

@@ -14,7 +14,7 @@ import { Notification, BackendNotification } from '../../models/notification.mod
     MessageListComponent,
     ChatInputComponent,
     SidePanelComponent,
-  ],
+],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -22,14 +22,34 @@ import { Notification, BackendNotification } from '../../models/notification.mod
 export class ChatComponent implements OnInit {
   public messages: Message[] = [];
   public notifications: Notification[] = [];
+  public resultNotifications: Notification[] = [];
   public lastToken: String | undefined;
-  public sideOpen = false;
+  public leftSideOpen = false;
+  public rightSideOpen = false;
   public isProcessing = false;
   private socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
+  public socketStatus: 'connecting' | 'open' | 'closed' = 'connecting';
 
   constructor(private cdr: ChangeDetectorRef) {}
 
   ngOnInit() {
+    // 👇 2. Add listeners for WebSocket lifecycle events
+    this.socket.onopen = () => {
+      this.socketStatus = 'open';
+      this.cdr.detectChanges(); 
+      console.log("OPEN")
+    };
+
+    this.socket.onclose = () => {
+      this.socketStatus = 'closed';
+      this.cdr.detectChanges();
+    };
+
+    this.socket.onerror = () => {
+      this.socketStatus = 'closed';
+      this.cdr.detectChanges();
+    };
+    
     this.socket.onmessage = (ev: MessageEvent) => {
         const msg = JSON.parse(ev.data);
 
@@ -62,7 +82,8 @@ export class ChatComponent implements OnInit {
             //   timestamp: new Date(),
             // });
             this.isProcessing = false;
-            this.sideOpen = false;
+            this.rightSideOpen = false;
+            this.leftSideOpen = false;
           } else {
             const arrivalTime = Date.now();
             const lastNotification = this.notifications[this.notifications.length - 1];
@@ -70,7 +91,7 @@ export class ChatComponent implements OnInit {
               ? (arrivalTime - lastNotification.arrivalTime) / 1000 
               : undefined;
 
-            this.notifications.push({
+            const notification = {
               ...backendNotification,
               id: this.notifications.length,
               expanded: false,
@@ -79,7 +100,16 @@ export class ChatComponent implements OnInit {
               taskVisible: false,
               arrivalTime, 
               timeDelta,
-            });
+            }
+
+            if ('ToolCallSuccessResult' in backendNotification.content) {
+              this.leftSideOpen = true;
+              this.resultNotifications.push(notification)
+            } else {
+              this.notifications.push(notification)
+            }
+
+            // this.notifications.push();
           }
         }
         
@@ -105,20 +135,31 @@ export class ChatComponent implements OnInit {
     // Clear old notifications and open the panel for the new request
     this.notifications = [];
     this.isProcessing = true;
-    this.sideOpen = true;
+    this.rightSideOpen = true;
 
     this.socket.send(JSON.stringify({ question: prompt }));
   }
 
   // --- Hover Handlers for Manual Control ---
-  handlePanelEnter() {
-    this.sideOpen = true;
+  handleRightPanelEnter() {
+    this.rightSideOpen = true;
   }
 
-  handlePanelLeave() {
+  handleRightPanelLeave() {
     // Only close the panel on mouse leave if we are not actively processing a request.
     if (!this.isProcessing) {
-      this.sideOpen = false;
+      this.rightSideOpen = false;
+    }
+  }
+
+  handleLeftPanelEnter() {
+    this.leftSideOpen = true;
+  }
+
+  handleLeftPanelLeave() {
+    // Only close the panel on mouse leave if we are not actively processing a request.
+    if (!this.isProcessing) {
+      this.leftSideOpen = false;
     }
   }
 }

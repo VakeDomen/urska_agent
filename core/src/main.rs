@@ -20,7 +20,9 @@ const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";
 const MEMORY_URL: &str = "http://localhost:8002/mcp";
 const PROGRAMME_AGENT_URL: &str = "http://localhost:8003/mcp";
 const SCRAPER_AGENT_URL: &str = "http://localhost:8000/sse"; 
-const RAG_SERVICE: &str = "http://localhost:8005/mcp"; 
+const RAG_PAGE_SERVICE: &str = "http://localhost:8005/mcp"; 
+const RAG_RULES_SERVICE: &str = "http://localhost:8006/mcp"; 
+const RAG_FAQ_SERVICE: &str = "http://localhost:8007/mcp"; 
 const BIND_ADDRESS: &str = "127.0.0.1:8004";
 
 

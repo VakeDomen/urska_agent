@@ -1,8 +1,10 @@
 <div class="chat-input">
+  <div class="status-indicator" [ngClass]="connectionStatus" [title]="'Socket Status: ' + connectionStatus"></div>
+  
   <textarea
     [(ngModel)]="text"
     (keydown.enter)="onEnter($event)"
     placeholder="Type a message…">
   </textarea>
-  <button (click)="emit()">Send</button>
+  <button (click)="emit()" [disabled]="connectionStatus !== 'open'">Send</button>
 </div>

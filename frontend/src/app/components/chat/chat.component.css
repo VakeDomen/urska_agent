@@ -14,13 +14,10 @@
 }
 
 
-/* New wrapper to position chat and panel together */
 .chat-wrapper {
   position: relative;
   display: flex;
   align-items: center;
-  
-  /* MOVED FROM .chat-container: Give the wrapper the explicit size */
   width: 100%;
   max-width: 800px;
   height: 90vh;
@@ -35,9 +32,6 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
   z-index: 10;
   transition: transform 0.3s ease-in-out;
-
-  /* REMOVED: width, max-width, height (moved to wrapper) */
-  /* ADDED: flex: 1 tells it to fill the wrapper's width */
   flex: 1; 
 }
 
@@ -45,7 +39,6 @@
 .side-panel-container {
   position: absolute;
   top: 0;
-  left: 100%; /* Start at the right edge of the chat-container */
   height: 100%;
   width: 400px;
   background-color: #f8f9fa;
@@ -55,18 +48,16 @@
   display: flex;
   flex-direction: column;
   transition: transform 0.3s ease-in-out;
-  
-  /* The "peek-a-boo" state: pull back to show a small sliver */
-  transform: translateX(-90%);
-  border-top-right-radius: 12px;
-  border-bottom-right-radius: 12px;
 }
 
-/* When open, the panel slides fully into view */
-.side-panel-container.open {
-  transform: translateX(0);
+
+.right {
+  right: 0%; /* Start at the right edge of the chat-container */
 }
 
+.left {
+  left: 0%; /* Start at the right edge of the chat-container */
+}
 .side-panel-header {
   padding: 16px;
   border-bottom: 1px solid #e0e0e0;
@@ -83,4 +74,35 @@
   flex: 1;
   display: flex; /* Make it a flex container to manage its child */
   overflow: hidden; /* Remove overflow-y and just hide any potential overflow */
+}
+
+.side-panel-container {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  max-width: 450px;
+  height: 100%;
+  background: #ffffff;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  transition: transform 0.3s ease-in-out;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-panel-container.left {
+  border-radius: 12px;
+  transform: translateX(-8%);
+}
+.side-panel-container.left.open {
+  transform: translateX(-100%);
+}
+
+
+.side-panel-container.right {
+  border-radius: 12px;
+  transform: translateX(8%);
+}
+.side-panel-container.right.open {
+  transform: translateX(100%);
 }

@@ -127,24 +127,22 @@
       </div>
 
       <div *ngIf="'ToolCallSuccessResult' in n.content">
-        <div class="details-grid">
-          <ng-container *ngFor="let item of n.content.ToolCallSuccessResult | keyvalue">
-            <ng-container *ngIf="item.key !== 'messages' && item.key !== 'tools'">
-
-              <ng-container *ngIf="item.key === 'format'; else defaultPair">
-                <label>format</label>
-                <pre class="details-pre">{{ item.value | json }}</pre>
-              </ng-container>
-
-              <ng-template #defaultPair>
-                <label>{{ item.key }}</label>
-                <span>{{ item.value }}</span>
-              </ng-template>
-              
+        <ng-container *ngIf="parseAsJson(n.content.ToolCallSuccessResult) as jsonData; else markdownResult">
+          
+          <div class="details-grid">
+            <ng-container *ngFor="let item of jsonData | keyvalue">
+              <label>{{ item.key }}</label>
+              <span>{{ item.value }}</span>
             </ng-container>
-          </ng-container>
-        </div>
+          </div>
 
+        </ng-container>
+
+        <ng-template #markdownResult>
+          <div class="prompt-content">
+            <markdown [data]="n.content.ToolCallSuccessResult"></markdown>
+          </div>
+        </ng-template>
       </div>
 
       <div *ngIf="'ToolCallErrorResult' in n.content">

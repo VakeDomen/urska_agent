@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter } from '@angular/core'
+import { Component, Output, EventEmitter, Input } from '@angular/core'
 import { CommonModule } from '@angular/common'
 import { FormsModule } from '@angular/forms'
 
@@ -11,7 +11,8 @@ import { FormsModule } from '@angular/forms'
 })
 export class ChatInputComponent {
   text = 'Doea famnit offer any scholarships for PhD students?'
-  @Output() send = new EventEmitter<string>()
+  @Output() send = new EventEmitter<string>();
+  @Input() connectionStatus: 'connecting' | 'open' | 'closed' = 'closed';
 
   onEnter(event: any) {
     if (!event.shiftKey) {

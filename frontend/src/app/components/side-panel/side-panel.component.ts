@@ -135,4 +135,18 @@ export class SidePanelComponent implements AfterViewInit, OnDestroy, OnChanges {
     if (delta < 30) return 'delta-orange';
     return 'delta-red';
   }
+
+  parseAsJson(data: string): any | null {
+    try {
+      const parsed = JSON.parse(data);
+      // We only want to treat it as JSON if the result is an object
+      if (typeof parsed === 'object' && parsed !== null) {
+        return parsed;
+      }
+      return null;
+    } catch (e) {
+      // If parsing fails, it's not JSON
+      return null;
+    }
+  }
 }

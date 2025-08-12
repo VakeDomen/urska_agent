@@ -17,3 +17,29 @@ button {
   border-radius: 0.5rem;
   cursor: pointer;
 }
+
+.chat-input-container {
+  display: flex;
+  align-items: center;
+  padding: 10px;
+  gap: 10px;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* New Status Indicator Styles */
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  transition: background-color 0.3s;
+  margin: 20px 8px;
+}
+.status-indicator.connecting { background-color: #ffc107; } /* Yellow */
+.status-indicator.open { background-color: #28a745; }       /* Green */
+.status-indicator.closed { background-color: #dc3545; }     /* Red */
+
+
+button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
