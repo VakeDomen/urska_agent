@@ -1423,8 +1423,8 @@ dependencies = [
 
 [[package]]
 name = "reagent"
-version = "0.1.6"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#6512c20c1406a8f4143e0c3037a534031b9fa0ac"
+version = "0.1.8"
+source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#4ba7e19f54599a63a058b66e5ead16500c4c4259"
 dependencies = [
  "async-stream",
  "futures",

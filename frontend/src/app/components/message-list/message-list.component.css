@@ -79,3 +79,66 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+
+.thinking-box {
+  overflow: hidden; /* Crucial for the collapse animation to work smoothly */
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background-color: #f9fafb;
+  margin-bottom: 8px; /* Adds space between the thinking box and the final response */
+}
+
+.thinking-header {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 6px 12px;
+  margin: 0;
+  border-bottom: 1px solid #d1d5db;
+  background-color: #f3f4f6;
+}
+
+/* The area where thinking tokens are streamed */
+.thinking-content {
+  height: 100px; /* Fixed height as requested */
+  overflow-y: auto; /* Allows scrolling if content exceeds the height */
+  padding: 8px 12px;
+  font-family: monospace;
+  font-size: 0.85em;
+  color: #4b5563;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* This will render markdown from your backend correctly */
+.assistant-message .message-bubble ::ng-deep p {
+    margin: 0;
+}
+.assistant-message .message-bubble ::ng-deep pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 1em;
+    border-radius: 4px;
+    font-size: 0.85em;
+    margin-top: 10px;
+}
+
+/* The loader container */
+.loader {
+  border: 6px solid #f3f3f3; /* Light grey "track" */
+  border-top: 6px solid #3498db; /* Blue "spinner" part */
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  animation: spin 1s linear infinite;
+  box-sizing: border-box; /* Ensures padding and border are included in the total width/height */
+}
+
+/* The spinning animation */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
