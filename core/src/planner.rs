@@ -1,14 +1,20 @@
-use reagent::{configs::PromptConfig, error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
+use reagent::{error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
+use schemars::{schema_for, JsonSchema};
+use serde::Deserialize;
 use tokio::sync::mpsc::Receiver;
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct Plan {
+  pub steps: Vec<Vec<String>>,
+}
 
 pub async fn create_planner_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_ollama_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = if let Ok(c) = ref_agent.export_prompt_config().await {
-        c
-    } else {
-        PromptConfig::default()
-    };
+    let prompt_config = ref_agent
+        .export_prompt_config()
+        .await
+        .unwrap_or_default();
     
     let system_prompt = r#"You are a meticulous Tactical Planner Agent. You will be given a high-level **strategy** and the original user **objective/question**. Your **sole purpose** is to convert that strategy into a concise, step-by-step plan in strict JSON format.
 
@@ -76,25 +82,10 @@ Good `"Use get_web_page_content to retrieve https://www.famnit.upr.si/en/educati
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Planner")
-        .set_response_format(r#"
-        {
-            "type": "object",
-            "properties": {
-                "steps": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                    }
-                }
-            },
-            "required": ["steps"]
-        }
-        "#)
+        .set_response_format(serde_json::to_string_pretty(&schema_for!(Plan)).unwrap())
         .set_system_prompt(system_prompt)
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gemma3:270m")
         .set_template(template)
         .set_clear_history_on_invocation(true)
         .build_with_notification()

@@ -1,14 +1,13 @@
-use reagent::{configs::PromptConfig, error::AgentBuildError, flow_types::{Flow, FlowFuture}, invocations::{invoke_with_tool_calls, invoke_without_tools}, Agent, AgentBuilder, Message, Notification, NotificationContent};
+use reagent::{error::AgentBuildError, flow_types::{Flow, FlowFuture}, invocations::{invoke_with_tool_calls, invoke_without_tools}, Agent, AgentBuilder, Message, Notification, NotificationContent};
 use tokio::sync::mpsc::Receiver;
 
 pub async fn create_single_task_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_ollama_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = if let Ok(c) = ref_agent.export_prompt_config().await {
-        c
-    } else {
-        PromptConfig::default()
-    };
+    let prompt_config = ref_agent
+        .export_prompt_config()
+        .await
+        .unwrap_or_default();
 
     let system_prompt = r#"You are the **Executor Agent**.  
 You will receive **one inner array of step instructions** (all meant to run in parallel).  
@@ -49,6 +48,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .import_prompt_config(prompt_config)
         .set_name("Step executor")
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gemma3:270m")
         .set_system_prompt(system_prompt)
         .set_flow(Flow::Custom(executor_flow))
         .set_clear_history_on_invocation(true)

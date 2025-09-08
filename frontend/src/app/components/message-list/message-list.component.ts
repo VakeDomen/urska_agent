@@ -2,12 +2,12 @@ import { Component, ElementRef, Input, OnChanges, SecurityContext, SimpleChanges
 import { CommonModule } from '@angular/common'
 import { trigger, style, transition, animate, state } from '@angular/animations'
 import { Message } from '../../models/message.model'
-import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown'; 
+import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown';
 
 @Component({
   selector: 'message-list',
   standalone: true,
-  imports: [ CommonModule, MarkdownModule ],
+  imports: [CommonModule, MarkdownModule],
   templateUrl: './message-list.component.html',
   styleUrls: ['./message-list.component.css'],
   providers: [
@@ -30,7 +30,7 @@ import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown'
   ]
 })
 export class MessageListComponent implements OnChanges {
-  
+
   @Input() messages: Message[] = []
   @Input() newToken: String | undefined;
 
@@ -56,7 +56,7 @@ export class MessageListComponent implements OnChanges {
         const element = this.scrollContainer.nativeElement;
         element.scrollTop = element.scrollHeight;
       }
-    } catch (err) { 
+    } catch (err) {
       console.error('Could not scroll to bottom:', err);
     }
   }
@@ -67,7 +67,7 @@ export class MessageListComponent implements OnChanges {
         const element = this.scrollContainerThink.nativeElement;
         element.scrollTop = element.scrollHeight;
       }
-    } catch (err) { 
+    } catch (err) {
       console.error('Could not scroll to bottom:', err);
     }
   }
@@ -111,15 +111,62 @@ export class MessageListComponent implements OnChanges {
     const thinkEndIndex = content.indexOf(thinkEndTag);
 
     if (thinkEndIndex !== -1) {
-      return content.substring(thinkEndIndex + thinkEndTag.length);
+      const raw = content.substring(thinkEndIndex + thinkEndTag.length);
+      return this.processLinks(raw);
     }
 
-    // If there was no thinking phase, return the whole content
     if (!content.startsWith('<think>')) {
-      return content;
+      return this.processLinks(content);
     }
 
-    // Otherwise, return nothing until the thinking phase is over
     return '';
+  }
+
+
+  /**
+   * Replaces Markdown links with HTML <a> tags that open in a new tab.
+   * Skips image links and preserves optional title text.
+   * Also converts bare autolinks like <https://example.com>.
+   */
+  private processLinks(markdown: string): string {
+    if (!markdown) return markdown;
+
+    // Replace [text](url "title") and [text](url)
+    // Ignore image syntax starting with "!["
+    const mdLinkRegex = /(!)?\[(?<text>[^\]]+)\]\((?<url>\S+?)(?:\s+"(?<title>[^"]*)")?\)/g;
+
+    const replaced = markdown.replace(mdLinkRegex, (match, bang, _text, _url, _title, offset, full) => {
+      if (bang) return match; // leave images unchanged
+
+      // Extract named groups safely
+      const groups = (mdLinkRegex as any).lastMatch?.groups || (match as any).groups; // TS appeasement
+      const text = groups?.text ?? _text;
+      const url = groups?.url ?? _url;
+      const title = groups?.title ?? _title;
+
+      // Basic guard against javascript: and data: URLs
+      const safeUrl = /^https?:\/\//i.test(url) || url.startsWith('/') ? url : '#';
+
+      const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
+      return `<a href="${this.escapeHtml(safeUrl)}"${titleAttr} target="_blank" rel="noopener noreferrer">${this.escapeHtml(text)}</a>`;
+    });
+
+    // Replace autolinks like <https://example.com>
+    const autoLinkRegex = /<((?:https?:\/\/)[^>\s]+)>/gi;
+    const replacedAuto = replaced.replace(autoLinkRegex, (_m, url) => {
+      const safeUrl = url;
+      const label = this.escapeHtml(url);
+      return `<a href="${this.escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    });
+
+    return replacedAuto;
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 }

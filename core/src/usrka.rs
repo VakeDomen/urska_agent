@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
+use futures::future::join_all;
 use reagent::{
     error::{AgentBuildError, AgentError}, flow_types::{Flow, FlowFuture}, invocations::invoke_without_tools, json, util::Template, Agent, AgentBuilder, McpServerType, Message, NotificationContent, Role
 };
-use serde::Deserialize;
 
 use crate::{
     blueprint::create_blueprint_agent, 
     executor::create_single_task_agent, 
-    planner::create_planner_agent, 
+    planner::{create_planner_agent, Plan}, 
     prompt_reconstuct::create_prompt_restructor_agent, 
     quick_responder::{create_quick_response_agent, Answerable}, 
     replanner::create_replanner_agent, 
@@ -17,18 +17,13 @@ use crate::{
     STAFF_AGENT_URL
 };
 
-#[derive(Debug, Deserialize)]
-struct Plan {
-  pub steps: Vec<Vec<String>>,
-}
-
 pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String) -> FlowFuture<'a> {
     Box::pin(async move {
         agent.history.push(Message::user(prompt.clone()));
         let mut inner_iterations_bound = 100;
 
         let mut past_steps: Vec<(String, String)> = Vec::new();
-        let mut flow_histroy: Vec<Message> = Vec::new();
+        let mut flow_histroy: Vec<Message> = vec![Message::system(agent.system_prompt.clone())];
         
         let (mut quick_responder_agent, quick_responder_notification_channel) = create_quick_response_agent(&agent).await?;
         let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&agent).await?;
@@ -85,7 +80,7 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
             if answ.can_respond {
                 FAQ = Some(faq.clone());
                 flow_histroy.push(Message::tool(faq, "1"));
-                inner_iterations_bound = 1;
+                inner_iterations_bound = 2;
             }
         };
 
@@ -122,21 +117,60 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
                 break;
             }
 
-            let current_step = if current_steps.len() > 1 {
-                format!("# Tasks to complete:\n\n{:#?}", current_steps.join("\n"))
-            } else {
-                current_steps[0].clone()
-            };
+            let mut agent_fututres = vec![];
+            for step in current_steps {
+                let mut worker = executor_agent.clone();
+
+                let fut = async move {
+                    // borrow happens here, and `worker` is owned by this future
+                    let out = worker.invoke_flow(step.clone()).await;
+                    (step, out)
+                };
+
+                agent_fututres.push(fut);
+            }
+
+
+            let results = join_all(agent_fututres).await;
+
+            for (step, response) in results {
+                let response = match response {
+                    Ok(resp) => resp,
+                    Err(e) => {
+                        println!("Error executing step `{}`: {}", step, e);
+                        continue;
+                    },
+                };
+
+                flow_histroy.push(Message::user(step.clone()));
+                flow_histroy.push(response.clone());
+
+                past_steps.push((
+                    step,
+                    response.content.unwrap_or_default()
+                ));
+            }
+
+            // let current_step = if current_steps.len() > 1 {
+            //     format!("# Tasks to complete:\n\n{:#?}", current_steps.join("\n"))
+            // } else {
+            //     current_steps[0].clone()
+            // };
 
             // flow_histroy.push(Message::user(current_step.clone()));
 
-            // execute the step
-            let response = executor_agent.invoke_flow(current_step.clone()).await?;        
-            flow_histroy.push(response.clone());
+            // // execute the step
+            // let response = executor_agent
+            //     .invoke_flow(current_step.clone())
+            //     .await?;        
+            // flow_histroy.push(response.clone());
 
 
-            let observation = response.content.clone().unwrap_or_default();
-            past_steps.push((current_step, observation));
+            // let observation = response
+            //     .content
+            //     .clone()
+            //     .unwrap_or_default();
+            // past_steps.push((current_step, observation));
             
             let past_steps_str = past_steps
                .iter()
@@ -159,23 +193,6 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
                 ("past_steps", past_steps_str),
             ])).await?;
         }
-
-        let final_response_template= Template::simple(r#"
-        Stick to response template and respond to user's original query. 
-        Note you should only respond with known data obtained from the exploration of the data 
-        (conversation histroy) and not your
-        own knowledge. 
-        Always provide relevant links and correctly write numbers such as 3775 (/3775).
-
-        User's query to respond to:
-
-        {{prompt}}
-
-        "#);
-
-        let prompt = final_response_template.compile(&HashMap::from([
-            ("prompt".into(), prompt.into())
-        ])).await;
 
         flow_histroy.push(Message::user(prompt));
         let mut conversation_history = agent.history.clone();
@@ -253,11 +270,13 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
     AgentBuilder::default()
         .set_system_prompt(system_prompt)
         .set_flow(Flow::Custom(plan_and_execute_flow))
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:UD-Q4_K_XL")
+
+        // .set_model("gemma3:270m")
         // .set_model("gpt-oss:120b")
         // .set_model("qwen3:0.6b")
         .set_name("Urška")
-        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
+        // .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
@@ -281,7 +300,7 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
 
 pub fn history_to_prompt(history: &Vec<Message>) -> String {
     let mut prompt = String::from("Here is a summary of a conversation.");
-    for msg in history.iter().skip(2) { // Skip the system prompt and the initial memory query result
+    for msg in history.iter().skip(1) {
         let content = msg.content.clone().unwrap_or_default();
         match msg.role {
             Role::User => prompt.push_str(&format!("USER ASKED: {}\n\n", content)),

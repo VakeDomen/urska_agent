@@ -11,11 +11,10 @@ pub struct Answerable {
 pub async fn create_quick_response_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_ollama_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = if let Ok(c) = ref_agent.export_prompt_config().await {
-        c
-    } else {
-        PromptConfig::default()
-    };
+    let prompt_config = ref_agent
+        .export_prompt_config()
+        .await
+        .unwrap_or_default();
     
     let system_prompt = r#"
     Evaluate if the user prompt can be answered with the given FAQ. If the answer is not directly 
@@ -43,8 +42,10 @@ pub async fn create_quick_response_agent(ref_agent: &Agent) -> Result<(Agent, Re
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Quick")
-        // .set_model("hf.co/unsloth/Qwen3-4b-Thinking-2507-GGUF:UD-Q4_K_XL")
-        .set_model("qwen3:0.6b")
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("qwen3:0.6b")
+
+        // .set_model("gemma3:270m")
         .set_template(template)
         .set_response_format(serde_json::to_string_pretty(&schema_for!(Answerable)).unwrap())
         .set_system_prompt(system_prompt)

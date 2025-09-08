@@ -1,15 +1,14 @@
-use reagent::{configs::PromptConfig, error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
+use reagent::{error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
 use tokio::sync::mpsc::Receiver;
 
 
 pub async fn create_prompt_restructor_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_ollama_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = if let Ok(c) = ref_agent.export_prompt_config().await {
-        c
-    } else {
-        PromptConfig::default()
-    };
+    let prompt_config = ref_agent
+        .export_prompt_config()
+        .await
+        .unwrap_or_default();
     
     let system_prompt = r#"You are a rewriting agent. You receive two inputs:
 1) conversation_history: a list of prior messages between the user and assistant
@@ -84,7 +83,8 @@ Rewrite:
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Rephraser")
-        .set_model("hf.co/unsloth/Qwen3-4b-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gemma3:270m")
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_clear_history_on_invocation(true)

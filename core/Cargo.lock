@@ -2321,6 +2321,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "futures",
  "html-escape",
  "reagent",
  "reqwest",

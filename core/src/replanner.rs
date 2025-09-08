@@ -1,14 +1,16 @@
-use reagent::{configs::PromptConfig, error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
+use reagent::{error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
+use schemars::schema_for;
 use tokio::sync::mpsc::Receiver;
+
+use crate::planner::Plan;
 
 pub async fn create_replanner_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_ollama_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = if let Ok(c) = ref_agent.export_prompt_config().await {
-        c
-    } else {
-        PromptConfig::default()
-    };
+    let prompt_config = ref_agent
+        .export_prompt_config()
+        .await
+        .unwrap_or_default();
     
     let system_prompt = r#"
 You are an expert Re-Planner Agent. Your job is to refine an existing plan so the Executor (who has no knowledge of the objective or history) can finish the user’s task efficiently.
@@ -203,24 +205,9 @@ Correct new JSON plan output
         .set_name("Plan revisor")
         .set_system_prompt(system_prompt)
         .set_template(template)
-        .set_response_format(r#"
-        {
-            "type": "object",
-            "properties": {
-                "steps": {
-                    "type": "array",
-                    "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
-                        }
-                    }
-                }
-            },
-            "required": ["steps"]
-        }
-        "#)
+        .set_response_format(serde_json::to_string_pretty(&schema_for!(Plan)).unwrap())
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        // .set_model("gemma3:270m")
         .set_clear_history_on_invocation(true)
         .build_with_notification()
         .await
