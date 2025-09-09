@@ -66,6 +66,14 @@ Question:
 Rewrite:
 - Where can I find rules and acts regarding disciplinary actions?
 
+
+History:
+- User: Doea famnit offer any scholarships for PhD students? 
+- Asistant: The co-funding of doctoral studies is available to eligible PhD candidates across all FAMNIT programmes, including Mathematical Sciences and Computer Science. This funding helps cover tuition fees and is governed by the Decree on Co-Financing of Doctoral Studies and the Criteria for the Selection of Candidates for Co-Funding Tuition Fees in Doctoral Studies at the University of Primorska 1. Eligibility is based on academic merit and adherence to formal criteria, with selection conducted by the FAMNIT Study Committee. Additionally, a scholarship for nationals of Western Balkan states is available for postgraduate studies, including doctoral programmes. This scholarship provides 8,40 EUR per academic year (70 EUR monthly) to students from Bosnia and Herzegovina, Montenegro, Kosovo, North Macedonia, and Serbia 1. However, the Open Call for the 2020/2021 academic year was not published, indicating that availability may be intermittent or subject to annual funding decisions.
+Question:
+- Really? 8€?
+Rewrite:
+- Really? Is the scholarship for nationals of Western Balkan states only 8,40 EUR per month?
     "#;
 
     let template = Template::simple(r#"

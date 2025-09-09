@@ -4,6 +4,7 @@ use futures::future::join_all;
 use reagent::{
     error::{AgentBuildError, AgentError}, flow_types::{Flow, FlowFuture}, invocations::invoke_without_tools, json, util::Template, Agent, AgentBuilder, McpServerType, Message, NotificationContent, Role
 };
+use rmcp::transport::worker;
 
 use crate::{
     blueprint::create_blueprint_agent, 
@@ -80,125 +81,116 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
             if answ.can_respond {
                 FAQ = Some(faq.clone());
                 flow_histroy.push(Message::tool(faq, "1"));
-                inner_iterations_bound = 2;
             }
         };
 
-        // create a general plan on how to tackle the problem
-        let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
-            ("tools", format!("{:#?}", agent.tools)),
-            ("prompt", prompt.clone()),
-            ("faq", format!("{:#?}", FAQ)),
-        ])).await?;
+        // // create a general plan on how to tackle the problem
+        // let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
+        //     ("tools", format!("{:#?}", agent.tools)),
+        //     ("prompt", prompt.clone()),
+        //     ("faq", format!("{:#?}", FAQ)),
+        // ])).await?;
 
 
-        let Some(blueprint) = blueprint.content else {
-            return Err(AgentError::Runtime("Blueprint was not created".into()));
-        };
-
-        // create a detailed step by step plan on how to tackle the problem
-        let mut plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
-            ("tools", format!("{:#?}", agent.tools)),
-            ("prompt", blueprint)
-        ])).await?;
-
-        
-        for iteration in 1..inner_iterations_bound {
-             
-
-            if plan.steps.is_empty() {
-                break;
-            }
-
-            // put the step instruction to the overarching agent history
-            let current_steps = plan.steps.remove(0);
-            
-            if current_steps.is_empty() {
-                break;
-            }
-
-            let mut agent_fututres = vec![];
-            for step in current_steps {
-                let mut worker = executor_agent.clone();
-
-                let fut = async move {
-                    // borrow happens here, and `worker` is owned by this future
-                    let out = worker.invoke_flow(step.clone()).await;
-                    (step, out)
-                };
-
-                agent_fututres.push(fut);
-            }
+        // let Some(blueprint) = blueprint.content else {
+        //     return Err(AgentError::Runtime("Blueprint was not created".into()));
+        // };
 
 
-            let results = join_all(agent_fututres).await;
-
-            for (step, response) in results {
-                let response = match response {
-                    Ok(resp) => resp,
-                    Err(e) => {
-                        println!("Error executing step `{}`: {}", step, e);
-                        continue;
-                    },
-                };
-
-                flow_histroy.push(Message::user(step.clone()));
-                flow_histroy.push(response.clone());
-
-                past_steps.push((
-                    step,
-                    response.content.unwrap_or_default()
-                ));
-            }
-
-            // let current_step = if current_steps.len() > 1 {
-            //     format!("# Tasks to complete:\n\n{:#?}", current_steps.join("\n"))
-            // } else {
-            //     current_steps[0].clone()
-            // };
-
-            // flow_histroy.push(Message::user(current_step.clone()));
-
-            // // execute the step
-            // let response = executor_agent
-            //     .invoke_flow(current_step.clone())
-            //     .await?;        
-            // flow_histroy.push(response.clone());
-
-
-            // let observation = response
-            //     .content
-            //     .clone()
-            //     .unwrap_or_default();
-            // past_steps.push((current_step, observation));
-            
-            let past_steps_str = past_steps
-               .iter()
-               .map(|(step, result)| format!("Step: {step}\nResult: {result}"))
-               .collect::<Vec<_>>()
-               .join("\n\n");
-
-
-            if let Some(max_iterations) = agent.max_iterations {
-                if iteration >= max_iterations {
-                    break;
-                }
-            }
-
-
-            plan = replanner_agent.invoke_flow_with_template_structured_output(HashMap::from([
+        if FAQ.is_none() {
+            // create a detailed step by step plan on how to tackle the problem
+            let plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
                 ("tools", format!("{:#?}", agent.tools)),
-                ("prompt", prompt.clone()),
-                ("plan", format!("{plan:#?}")),
-                ("past_steps", past_steps_str),
+                ("prompt", prompt.clone())
             ])).await?;
+    
+    
+            // save plan to file
+            serde_json::to_writer_pretty(std::fs::File::create("last_plan.json").unwrap(), &plan).unwrap();
+    
+    
+            let mut i = 0;
+            let mut executor_fututres = vec![];
+            for step_sequence in plan.steps.into_iter() {
+                let worker_clone = executor_agent.clone();
+                // let prompt_clone = prompt.clone();
+                let executor_future = async move {
+                    let mut worker = worker_clone;
+                    let mut executor_task_log = vec![];
+    
+                    for step in step_sequence.into_iter() {
+                        let response = match worker.invoke_flow(step.clone()).await {
+                            Ok(resp) => resp,
+                            Err(e) => {
+                                println!("Error executing step `{}`: {}", step, e);
+                                continue;
+                            },
+                        };
+                        executor_task_log.push((
+                            Message::user(step.clone()), 
+                            response
+                        ));
+                    }
+
+                    let _ = worker.save_history(format!("executor_run_{}.json", i));
+                    executor_task_log
+    
+                };
+                i += 1;
+                executor_fututres.push(executor_future);
+            
+            }
+    
+            let executor_results = join_all(executor_fututres).await;
+            let mut past_steps: Vec<(String, String)> = Vec::new();
+    
+            for executor_task_log in executor_results {
+                for (task, response) in executor_task_log {
+                    past_steps.push((
+                        task.content.unwrap_or_default(), 
+                        response.content.unwrap_or_default()
+                    ));
+                }
+        
+            }
+            
+            let aggregated_history = past_steps
+                .iter()
+                .enumerate()
+                .map(|(i, (task, response))| {
+                    format!(
+                        "### Step {}\nUser Instruction:\n{}\n\nExecutor Response:\n{}\n ",
+                        i + 1,
+                        task.trim(),
+                        response.trim()
+                    )
+                })
+                .collect::<Vec<String>>()
+                .join("\n\n---\n\n");
+    
+            flow_histroy.push(Message::tool(aggregated_history, "0"));
+    
+
+
+        } else {
+            flow_histroy.push(Message::tool(FAQ.unwrap_or_default(), "1"));
         }
 
+        
+
+
+        
         flow_histroy.push(Message::user(prompt));
+
+
         let mut conversation_history = agent.history.clone();
         agent.history = flow_histroy;
+        
         let response = invoke_without_tools(agent).await?;
         conversation_history.push(response.message.clone());
+        
+        let _ = agent.save_history("urska_conversation.json".to_string());
+
         agent.history = conversation_history;
 
         agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
@@ -265,18 +257,23 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
     * Deliver the entire report as a single, self‑contained message.
     * Include all relevant links. All links included should be existing links and found in the conversations. 
 
+    skip and DO NOT include references if there is no relevant links. 
+    Never use example.com or similar placeholders.
+
+    GENERAL HINTS:
+    - https://www.famnit.upr.si/en/education/enrolment <- contains enrollement deadlines, links to fees,...
     "#;
 
     AgentBuilder::default()
         .set_system_prompt(system_prompt)
         .set_flow(Flow::Custom(plan_and_execute_flow))
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:UD-Q4_K_XL")
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
 
         // .set_model("gemma3:270m")
         // .set_model("gpt-oss:120b")
         // .set_model("qwen3:0.6b")
         .set_name("Urška")
-        // .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
+        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
@@ -318,3 +315,4 @@ pub fn history_to_prompt(history: &Vec<Message>) -> String {
     println!("CONVO: {}", prompt);
     prompt
 }
+

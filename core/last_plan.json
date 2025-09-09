@@ -1,0 +1,16 @@
+{
+  "steps": [
+    [
+      "Call ask_about_rules_and_acts with question set to What is the official deadline for submitting the bachelor's thesis at FAMNIT and k set to 3. Return any relevant passages, rules, or links.",
+      "Call retrieve_similar_FAQ with question set to What is the deadline for submitting the bachelor's thesis at FAMNIT? and k set to 6. Return any FAQ entries that mention the submission deadline."
+    ],
+    [
+      "Call ask_about_general_information with question set to When is the deadline for submitting a bachelor's thesis at FAMNIT? and k set to 3. Return any relevant passages or announcements.",
+      "If a relevant link (e.g., from the university website or study regulations) is found in the tool outputs, call get_web_page_content with url set to that link and return any additional details about the deadline."
+    ],
+    [
+      "Call get_programme_info with name set to 'Bachelor's programme' and level set to 'undergraduate', and sections set to ['completion_requirements', 'course_structure']. Return any information about thesis submission deadlines.",
+      "If a relevant URL appears in the output (e.g., from the course structure or rules section), call get_web_page_content with that URL and return any explicit mention of the 30 September deadline."
+    ]
+  ]
+}
