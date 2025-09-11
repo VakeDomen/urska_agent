@@ -1,6 +1,6 @@
 use std::{fmt::format, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
-use reagent::{init_default_tracing, Agent, AgentBuilder, McpServerType};
+use reagent_rs::{init_default_tracing, Agent, AgentBuilder, McpServerType};
 use rmcp::{
     handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id}, Peer, RoleServer, ServerHandler
 };

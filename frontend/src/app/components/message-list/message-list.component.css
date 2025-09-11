@@ -101,7 +101,7 @@
 
 /* The area where thinking tokens are streamed */
 .thinking-content {
-  height: 100px; /* Fixed height as requested */
+  max-height: 100px; 
   overflow-y: auto; /* Allows scrolling if content exceeds the height */
   padding: 8px 12px;
   font-family: monospace;
@@ -131,8 +131,8 @@
   border: 6px solid #f3f3f3; /* Light grey "track" */
   border-top: 6px solid #3498db; /* Blue "spinner" part */
   border-radius: 50%;
-  width: 30px;
-  height: 30px;
+  width: 25px;
+  height: 25px;
   animation: spin 1s linear infinite;
   box-sizing: border-box; /* Ensures padding and border are included in the total width/height */
 }

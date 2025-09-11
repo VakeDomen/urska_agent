@@ -23,6 +23,7 @@ export class ChatComponent implements OnInit {
   public messages: Message[] = [];
   public notifications: Notification[] = [];
   public resultNotifications: Notification[] = [];
+  public stateMessage: String | undefined;
   public lastToken: String | undefined;
   public leftSideOpen = false;
   public rightSideOpen = false;
@@ -68,6 +69,11 @@ export class ChatComponent implements OnInit {
 
           if ('Token' in backendNotification.content) {
             return;
+          }
+
+
+          if ('Custom' in backendNotification.content) {
+            this.stateMessage = backendNotification.content.Custom.message;
           }
 
           if (

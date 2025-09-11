@@ -1,8 +1,8 @@
-use reagent::{error::AgentBuildError, flow_types::{Flow, FlowFuture}, invocations::{invoke_with_tool_calls, invoke_without_tools}, Agent, AgentBuilder, Message, Notification, NotificationContent};
+use reagent_rs::{invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, Flow, FlowFuture, Message, Notification, NotificationContent};
 use tokio::sync::mpsc::Receiver;
 
 pub async fn create_single_task_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
-    let ollama_config = ref_agent.export_ollama_config();
+    let ollama_config = ref_agent.export_client_config();
     let model_config = ref_agent.export_model_config();
     let prompt_config = ref_agent
         .export_prompt_config()
@@ -67,11 +67,11 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
     "#;
 
     AgentBuilder::default()
-        .import_ollama_config(ollama_config)
+        .import_client_config(ollama_config)
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Step executor")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:UD-Q4_K_XL")
+        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
         .strip_thinking(true)
         // .set_model("qwen3:0.6b")
         // .set_model("gemma3:270m")

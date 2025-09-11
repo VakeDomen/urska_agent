@@ -1,4 +1,4 @@
-use reagent::{configs::PromptConfig, error::AgentBuildError, prebuilds::StatelessPrebuild, util::Template, Agent, Notification};
+use reagent_rs::{Agent, AgentBuildError, Notification,StatelessPrebuild, Template};
 use serde::Deserialize;
 use tokio::sync::mpsc::Receiver;
 use schemars::{schema_for, JsonSchema};
@@ -9,7 +9,7 @@ pub struct Answerable {
 }
 
 pub async fn create_quick_response_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
-    let ollama_config = ref_agent.export_ollama_config();
+    let ollama_config = ref_agent.export_client_config();
     let model_config = ref_agent.export_model_config();
     let prompt_config = ref_agent
         .export_prompt_config()
@@ -38,7 +38,7 @@ pub async fn create_quick_response_agent(ref_agent: &Agent) -> Result<(Agent, Re
 
 
     StatelessPrebuild::reply_without_tools()
-        .import_ollama_config(ollama_config)
+        .import_client_config(ollama_config)
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Quick")

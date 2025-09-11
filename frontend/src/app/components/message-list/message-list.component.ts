@@ -33,6 +33,7 @@ export class MessageListComponent implements OnChanges {
 
   @Input() messages: Message[] = []
   @Input() newToken: String | undefined;
+  @Input() stateMessage: String | undefined;
 
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
   @ViewChild('scrollContainerThink') private scrollContainerThink!: ElementRef;

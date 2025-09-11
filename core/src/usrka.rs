@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use futures::future::join_all;
-use reagent::{
-    error::{AgentBuildError, AgentError}, flow_types::{Flow, FlowFuture}, invocations::invoke_without_tools, json, util::Template, Agent, AgentBuilder, McpServerType, Message, NotificationContent, Role
-};
+use reagent_rs::{invoke_without_tools, Agent, AgentBuildError, AgentBuilder, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, Role, StatelessPrebuild, Template};
 use rmcp::transport::worker;
+use serde::Serialize;
+use serde_json::{json, to_value};
 
 use crate::{
     blueprint::create_blueprint_agent, 
@@ -18,8 +18,18 @@ use crate::{
     STAFF_AGENT_URL
 };
 
+#[derive(Debug, Clone, Serialize)]
+pub struct UrskaNotification {
+    message: String,
+}
+
 pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String) -> FlowFuture<'a> {
     Box::pin(async move {
+
+        agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+            message: "Preparing...".into()
+        }).unwrap())).await;
+
         agent.history.push(Message::user(prompt.clone()));
         let mut inner_iterations_bound = 100;
 
@@ -43,19 +53,30 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
         // more than system + first prompt
         // query rewrite
         if agent.history.len() > 2 {
-          let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
-            ("history", history_to_prompt(&agent.history)),
-            ("prompt", prompt.clone())
-          ])).await?;
+            agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                message: "Assessing query...".into()
+            }).unwrap())).await;
 
-          if let Some(rephrased_prompt) = rehprase_response.content {
-            prompt = rephrased_prompt;
-          }
+
+
+            let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
+                ("history", history_to_prompt(&agent.history)),
+                ("prompt", prompt.clone())
+            ])).await?;
+
+            if let Some(rephrased_prompt) = rehprase_response.content {
+                prompt = rephrased_prompt;
+            }
         }
 
         // if we have access to FAQ, check if we can answer right away using FAQ
         let mut FAQ = None;
         if let Some(tool) = agent.get_tool_ref_by_name("retrieve_similar_FAQ") {
+            quick_responder_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                message: "Checking for quick response...".into()
+            }).unwrap())).await;
+
+
             let faq = match tool.execute(json!({
                 "question": prompt,
                 "k": 10,
@@ -98,6 +119,11 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
 
 
         if FAQ.is_none() {
+            planner_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                message: "Thinking how to find the requested information...".into()
+            }).unwrap())).await;
+
+
             // create a detailed step by step plan on how to tackle the problem
             let plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
                 ("tools", format!("{:#?}", agent.tools)),
@@ -119,6 +145,10 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
                     let mut executor_task_log = vec![];
     
                     for step in step_sequence.into_iter() {
+                        worker.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                            message: step.clone()
+                        }).unwrap())).await;
+
                         let response = match worker.invoke_flow(step.clone()).await {
                             Ok(resp) => resp,
                             Err(e) => {
@@ -140,6 +170,10 @@ pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String
                 executor_fututres.push(executor_future);
             
             }
+
+            agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                message: "Constructing answer...".into()
+            }).unwrap())).await;
     
             let executor_results = join_all(executor_fututres).await;
             let mut past_steps: Vec<(String, String)> = Vec::new();
@@ -262,6 +296,8 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
 
     GENERAL HINTS:
     - https://www.famnit.upr.si/en/education/enrolment <- contains enrollement deadlines, links to fees,...
+    - When writing numbers the source text might use comma instead of dot for decimal point. Output a dot.
+    - Be careful to correctly copy urls, especially if they contain ids, etc (for example /static/3775).
     "#;
 
     AgentBuilder::default()
@@ -273,7 +309,7 @@ pub async fn build_urska() -> Result<Agent, AgentBuildError> {
         // .set_model("gpt-oss:120b")
         // .set_model("qwen3:0.6b")
         .set_name("Urška")
-        .set_ollama_endpoint("http://hivecore.famnit.upr.si:6666")
+        .set_base_url("http://hivecore.famnit.upr.si:6666")
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))

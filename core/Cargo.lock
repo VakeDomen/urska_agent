@@ -1422,9 +1422,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "reagent"
-version = "0.1.8"
-source = "git+https://github.com/VakeDomen/Reagent.git?branch=main#4ba7e19f54599a63a058b66e5ead16500c4c4259"
+name = "reagent-rs"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ede7c29a3c75643db908036ab95fcd20b4e5add3ddec32b087200d45036204cd"
 dependencies = [
  "async-stream",
  "futures",
@@ -2323,7 +2324,7 @@ dependencies = [
  "axum",
  "futures",
  "html-escape",
- "reagent",
+ "reagent-rs",
  "reqwest",
  "rmcp",
  "schemars",

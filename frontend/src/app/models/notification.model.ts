@@ -7,7 +7,8 @@ export type NotificationContent =
   | { ToolCallSuccessResult: string }
   | { ToolCallErrorResult: string }
   | { McpToolNotification: string }
-  | { Token: { key: string, value: string } };
+  | { Token: { key: string, value: string } }
+  | { Custom: { message: string } };
 export interface BackendNotification {
   agent: string;
   content: NotificationContent;

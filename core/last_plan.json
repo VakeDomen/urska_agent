@@ -1,16 +1,16 @@
 {
   "steps": [
     [
-      "Call ask_about_rules_and_acts with question set to What is the official deadline for submitting the bachelor's thesis at FAMNIT and k set to 3. Return any relevant passages, rules, or links.",
-      "Call retrieve_similar_FAQ with question set to What is the deadline for submitting the bachelor's thesis at FAMNIT? and k set to 6. Return any FAQ entries that mention the submission deadline."
+      "Call ask_about_rules_and_acts with question set to What are the academic integrity policies and consequences for cheating at FAMNIT, including procedural steps and possible sanctions, and k set to 3. Return any relevant passages from the university's rules and acts.",
+      "If a relevant link to the academic integrity policy or disciplinary procedure is present in the tool outputs, call get_web_page_content with url set to that link and return any additional details about the process, penalties, or appeal rights."
     ],
     [
-      "Call ask_about_general_information with question set to When is the deadline for submitting a bachelor's thesis at FAMNIT? and k set to 3. Return any relevant passages or announcements.",
-      "If a relevant link (e.g., from the university website or study regulations) is found in the tool outputs, call get_web_page_content with url set to that link and return any additional details about the deadline."
+      "Call retrieve_similar_FAQ with question set to What happens if a student is caught cheating at FAMNIT, and k set to 6. Return any frequently asked questions and answers related to academic misconduct, penalties, or appeals.",
+      "If a relevant FAQ entry mentions an appeal process or right to a hearing, store that information in memory using store_memory with the memory text: 'Student has right to appeal academic misconduct decision at FAMNIT.'"
     ],
     [
-      "Call get_programme_info with name set to 'Bachelor's programme' and level set to 'undergraduate', and sections set to ['completion_requirements', 'course_structure']. Return any information about thesis submission deadlines.",
-      "If a relevant URL appears in the output (e.g., from the course structure or rules section), call get_web_page_content with that URL and return any explicit mention of the 30 September deadline."
+      "Call ask_about_general_information with question set to What support services are available for students facing academic misconduct charges at FAMNIT, and k set to 2. Return any information about student counseling, legal aid, or academic advisors.",
+      "If a contact or office (e.g., student ombudsman, academic advisor) is mentioned, use get_staff_profiles with name set to the office or person's name (e.g., 'student ombudsman') and k set to 1 to retrieve their contact details and responsibilities."
     ]
   ]
 }

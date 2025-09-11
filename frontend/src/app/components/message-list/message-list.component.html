@@ -10,7 +10,12 @@
 
       <div *ngIf="msg.role === 'assistant'" class="message-bubble">
         <div *ngIf="!msg.content" class="loader"></div>
-
+        <div *ngIf="!msg.content && stateMessage" class="thinking-box">
+          <h4 class="thinking-header">🤔 Thinking...</h4>
+            <div class="thinking-content" #scrollContainerThink>
+                {{ stateMessage }}
+            </div>
+        </div>
         <div class="thinking-box" [@collapse]="isThinking(msg)">
             <h4 class="thinking-header">🤔 Thinking...</h4>
             <div class="thinking-content" #scrollContainerThink>

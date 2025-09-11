@@ -19,6 +19,7 @@
       <message-list 
         [messages]="messages"
         [newToken]="lastToken"  
+        [stateMessage]="stateMessage"
       ></message-list>
       <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
     </div>
