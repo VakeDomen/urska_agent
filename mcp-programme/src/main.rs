@@ -64,8 +64,8 @@ pub struct ProgrammeInfoRequest {
     pub name: String,
     /// Optional study level to filter by: 'undergraduate', 'master', 'doctoral' or 'any'.
     pub level: Option<String>,
-    /// Optional. A list of specific sections to return. Valid sections: 'general_info', 'coordinators', 'about', 'goals', 'course_structure', 'field_work', 'course_tables', 'admission_requirements', 'transfer_criteria', 'advancement_requirements', 'completion_requirements', 'competencies', 'employment_opportunities'.
-    pub sections: Option<Vec<String>>,
+    // Optional. A list of specific sections to return. Valid sections: 'general_info', 'coordinators', 'about', 'goals', 'course_structure', 'field_work', 'course_tables', 'admission_requirements', 'transfer_criteria', 'advancement_requirements', 'completion_requirements', 'competencies', 'employment_opportunities'.
+    // pub sections: Option<Vec<String>>,
 }
 
 
@@ -207,7 +207,7 @@ impl Service {
 
     #[tool(
         name = "get_programme_info",
-        description = "Return detailed programme information (ECTS, duration, etc.). If a programme with the same name exists at multiple levels, you must use the 'level' parameter to disambiguate. Use the 'sections' parameter to be efficient and request only the information you need."
+        description = "Return detailed programme information (ECTS, duration, etc.). If a programme with the same name exists at multiple levels, you must use the 'level' parameter to disambiguate."
     )]
     pub async fn get_programme_info(
         &self,
@@ -257,12 +257,28 @@ impl Service {
             None => return Ok(CallToolResult::success(vec![Content::text(format!("No programme found for '{}' at the specified level.", best_match_name))])),
         };
 
-        let sections_to_render: Option<HashSet<ProgrammeSection>> = request.sections
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|s| ProgrammeSection::from_str(s))
-                    .collect()
-            });
+        let sections_to_render: Option<HashSet<ProgrammeSection>> = {
+            let section_names = vec![
+                "general_info", 
+                "coordinators", 
+                "about", 
+                "goals", 
+                "course_structure", 
+                "field_work", 
+                "course_tables", 
+                "admission_requirements", 
+                "transfer_criteria", 
+                "advancement_requirements", 
+                "completion_requirements", 
+                "competencies", 
+                "employment_opportunities"
+            ];
+            let set: HashSet<ProgrammeSection> = section_names
+                .into_iter()
+                .filter_map(|s| ProgrammeSection::from_str(s))
+                .collect();
+            Some(set)
+        };
         
         let mut result = String::new();
         match get_page(&target_programme.url).await {

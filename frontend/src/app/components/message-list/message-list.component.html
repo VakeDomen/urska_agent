@@ -1,35 +1,31 @@
 <div class="message-list-container" #scrollContainer>
-  <div *ngFor="let msg of messages" 
-       class="message-wrapper"
-       [@fadeIn]
-       [ngClass]="{
+  <div *ngFor="let msg of messages" class="message-wrapper" [@fadeIn] [ngClass]="{
          'user-message': msg.role === 'user',
          'assistant-message': msg.role === 'assistant'
        }">
     <div class="message-row">
 
       <div *ngIf="msg.role === 'assistant'" class="message-bubble">
-        <div *ngIf="!msg.content" class="loader"></div>
         <div *ngIf="!msg.content && stateMessage" class="thinking-box">
-          <h4 class="thinking-header">🤔 Thinking...</h4>
-            <div class="thinking-content" #scrollContainerThink>
-                {{ stateMessage }}
-            </div>
+          <h4 class="thinking-header"><span *ngIf="!msg.content" class="loader"></span> 🤔 Thinking...</h4>
+          <div class="thinking-content" #scrollContainerThink>
+            {{ stateMessage }}
+          </div>
         </div>
         <div class="thinking-box" [@collapse]="isThinking(msg)">
-            <h4 class="thinking-header">🤔 Thinking...</h4>
-            <div class="thinking-content" #scrollContainerThink>
-                {{ getThinkingContent(msg) }}
-            </div>
+          <h4 class="thinking-header">🤔 Thinking...</h4>
+          <div class="thinking-content" #scrollContainerThink>
+            {{ getThinkingContent(msg) }}
+          </div>
         </div>
-        
+
         <markdown *ngIf="shouldRenderFinalContent(msg)" [data]="getFinalContent(msg)"></markdown>
       </div>
 
       <div *ngIf="msg.role === 'user'" class="message-bubble">
         {{ msg.content }}
       </div>
-      
+
     </div>
   </div>
 </div>

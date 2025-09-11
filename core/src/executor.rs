@@ -1,4 +1,4 @@
-use reagent_rs::{invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, Flow, FlowFuture, Message, Notification, NotificationContent};
+use reagent_rs::{flow, invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, Message, Notification, NotificationContent};
 use tokio::sync::mpsc::Receiver;
 
 pub async fn create_single_task_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
@@ -76,7 +76,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         // .set_model("qwen3:0.6b")
         // .set_model("gemma3:270m")
         .set_system_prompt(system_prompt)
-        .set_flow(Flow::Custom(executor_flow))
+        .set_flow(flow!(executor_flow))
         // .set_clear_history_on_invocation(true)
         .set_max_iterations(15)
         .build_with_notification()
@@ -84,20 +84,18 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 }
 
 
-fn executor_flow<'a>(agent: &'a mut Agent, prompt: String) -> FlowFuture<'a> {
-    Box::pin(async move {
-        agent.history.push(Message::user(prompt));
-        
-        let mut resp = invoke_with_tool_calls(agent).await?;
-        for _ in 0..agent.max_iterations.unwrap_or(5) {
-        
-            if resp.message.tool_calls.is_none() {
-                break;
-            }
-            resp = invoke_with_tool_calls(agent).await?;
-        } 
-        // let response = invoke_without_tools(agent).await?;
-        agent.notify(NotificationContent::Done(true, resp.message.content.clone())).await;
-        Ok(resp.message)
-    })   
+async fn executor_flow(agent: &mut Agent, prompt: String) -> Result<Message, AgentError> {
+    agent.history.push(Message::user(prompt));
+    
+    let mut resp = invoke_with_tool_calls(agent).await?;
+    for _ in 0..agent.max_iterations.unwrap_or(5) {
+    
+        if resp.message.tool_calls.is_none() {
+            break;
+        }
+        resp = invoke_with_tool_calls(agent).await?;
+    } 
+    // let response = invoke_without_tools(agent).await?;
+    agent.notify(NotificationContent::Done(true, resp.message.content.clone())).await;
+    Ok(resp.message)
 }

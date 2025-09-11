@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use futures::future::join_all;
-use reagent_rs::{invoke_without_tools, Agent, AgentBuildError, AgentBuilder, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, Role, StatelessPrebuild, Template};
+use reagent_rs::{flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, Role, StatelessPrebuild, Template};
 use rmcp::transport::worker;
 use serde::Serialize;
 use serde_json::{json, to_value};
@@ -23,286 +23,321 @@ pub struct UrskaNotification {
     message: String,
 }
 
-pub(crate )fn plan_and_execute_flow<'a>(agent: &'a mut Agent, mut prompt: String) -> FlowFuture<'a> {
-    Box::pin(async move {
+pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
+    agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+        message: "Preparing...".into()
+    }).unwrap())).await;
 
+    agent.history.push(Message::user(prompt.clone()));
+    let mut inner_iterations_bound = 100;
+
+    let mut past_steps: Vec<(String, String)> = Vec::new();
+    let mut flow_histroy: Vec<Message> = vec![Message::system(agent.system_prompt.clone())];
+    
+    let (mut quick_responder_agent, quick_responder_notification_channel) = create_quick_response_agent(&agent).await?;
+    let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&agent).await?;
+    let (mut blueprint_agent, blueprint_notification_channel) = create_blueprint_agent(agent).await?;
+    let (mut planner_agent, planner_notification_channel) = create_planner_agent(agent).await?;
+    let (mut replanner_agent, replanner_notification_channel) = create_replanner_agent(agent).await?;
+    let (mut executor_agent, executor_notification_channel) = create_single_task_agent(agent).await?;
+
+    agent.forward_notifications(quick_responder_notification_channel);
+    agent.forward_notifications(rephraser_notification_channel);
+    agent.forward_notifications(blueprint_notification_channel);
+    agent.forward_notifications(planner_notification_channel);
+    agent.forward_notifications(replanner_notification_channel);
+    agent.forward_notifications(executor_notification_channel);      
+
+    // more than system + first prompt
+    // query rewrite
+    if agent.history.len() > 2 {
         agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-            message: "Preparing...".into()
+            message: "Assessing query...".into()
         }).unwrap())).await;
 
-        agent.history.push(Message::user(prompt.clone()));
-        let mut inner_iterations_bound = 100;
-
-        let mut past_steps: Vec<(String, String)> = Vec::new();
-        let mut flow_histroy: Vec<Message> = vec![Message::system(agent.system_prompt.clone())];
-        
-        let (mut quick_responder_agent, quick_responder_notification_channel) = create_quick_response_agent(&agent).await?;
-        let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&agent).await?;
-        let (mut blueprint_agent, blueprint_notification_channel) = create_blueprint_agent(agent).await?;
-        let (mut planner_agent, planner_notification_channel) = create_planner_agent(agent).await?;
-        let (mut replanner_agent, replanner_notification_channel) = create_replanner_agent(agent).await?;
-        let (mut executor_agent, executor_notification_channel) = create_single_task_agent(agent).await?;
-
-        agent.forward_notifications(quick_responder_notification_channel);
-        agent.forward_notifications(rephraser_notification_channel);
-        agent.forward_notifications(blueprint_notification_channel);
-        agent.forward_notifications(planner_notification_channel);
-        agent.forward_notifications(replanner_notification_channel);
-        agent.forward_notifications(executor_notification_channel);      
-
-        // more than system + first prompt
-        // query rewrite
-        if agent.history.len() > 2 {
-            agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-                message: "Assessing query...".into()
-            }).unwrap())).await;
 
 
+        let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
+            ("history", history_to_prompt(&agent.history)),
+            ("prompt", prompt.clone())
+        ])).await?;
 
-            let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
-                ("history", history_to_prompt(&agent.history)),
-                ("prompt", prompt.clone())
-            ])).await?;
-
-            if let Some(rephrased_prompt) = rehprase_response.content {
-                prompt = rephrased_prompt;
-            }
+        if let Some(rephrased_prompt) = rehprase_response.content {
+            prompt = rephrased_prompt;
         }
+    }
 
-        // if we have access to FAQ, check if we can answer right away using FAQ
-        let mut FAQ = None;
-        if let Some(tool) = agent.get_tool_ref_by_name("retrieve_similar_FAQ") {
-            quick_responder_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-                message: "Checking for quick response...".into()
-            }).unwrap())).await;
-
-
-            let faq = match tool.execute(json!({
-                "question": prompt,
-                "k": 10,
-            })).await {
-                Ok(resp) => resp,
-                Err(_e) => "No similar FAQ found".into(),
-            };
-
-            quick_responder_agent
-                .notify(NotificationContent::ToolCallSuccessResult(faq.clone()))
-                .await;
-
-            let input = HashMap::from([
-                ("prompt", prompt.clone()),
-                ("faq",  faq.clone().into())
-            ]);
-
-            let answ: Answerable = quick_responder_agent
-                .invoke_flow_with_template_structured_output(input)
-                .await?;
+    // if we have access to FAQ, check if we can answer right away using FAQ
+    let mut FAQ = None;
+    if let Some(tool) = agent.get_tool_ref_by_name("retrieve_similar_FAQ") {
+        quick_responder_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+            message: "Checking for quick response...".into()
+        }).unwrap())).await;
 
 
-            if answ.can_respond {
-                FAQ = Some(faq.clone());
-                flow_histroy.push(Message::tool(faq, "1"));
-            }
+        let faq = match tool.execute(json!({
+            "question": prompt,
+            "k": 10,
+        })).await {
+            Ok(resp) => resp,
+            Err(_e) => "No similar FAQ found".into(),
         };
 
-        // // create a general plan on how to tackle the problem
-        // let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
-        //     ("tools", format!("{:#?}", agent.tools)),
-        //     ("prompt", prompt.clone()),
-        //     ("faq", format!("{:#?}", FAQ)),
-        // ])).await?;
+        quick_responder_agent
+            .notify(NotificationContent::ToolCallSuccessResult(faq.clone()))
+            .await;
+
+        let input = HashMap::from([
+            ("prompt", prompt.clone()),
+            ("faq",  faq.clone().into())
+        ]);
+
+        let answ: Answerable = quick_responder_agent
+            .invoke_flow_with_template_structured_output(input)
+            .await?;
+
+        flow_histroy.push(Message::tool(faq.clone(), "1"));
+
+        if answ.can_respond {
+            FAQ = Some(faq);
+        }
+    };
+
+    // create a general plan on how to tackle the problem
+    let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
+        ("tools", format!("{:#?}", agent.tools)),
+        ("prompt", prompt.clone()),
+        ("faq", format!("{:#?}", FAQ)),
+    ])).await?;
 
 
-        // let Some(blueprint) = blueprint.content else {
-        //     return Err(AgentError::Runtime("Blueprint was not created".into()));
-        // };
+    let Some(blueprint) = blueprint.content else {
+        return Err(AgentError::Runtime("Blueprint was not created".into()));
+    };
 
 
-        if FAQ.is_none() {
-            planner_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-                message: "Thinking how to find the requested information...".into()
-            }).unwrap())).await;
+    if FAQ.is_none() {
+        planner_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+            message: "Thinking how to find the requested information...".into()
+        }).unwrap())).await;
 
 
-            // create a detailed step by step plan on how to tackle the problem
-            let plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
-                ("tools", format!("{:#?}", agent.tools)),
-                ("prompt", prompt.clone())
-            ])).await?;
-    
-    
-            // save plan to file
-            serde_json::to_writer_pretty(std::fs::File::create("last_plan.json").unwrap(), &plan).unwrap();
-    
-    
-            let mut i = 0;
-            let mut executor_fututres = vec![];
-            for step_sequence in plan.steps.into_iter() {
-                let worker_clone = executor_agent.clone();
-                // let prompt_clone = prompt.clone();
-                let executor_future = async move {
-                    let mut worker = worker_clone;
-                    let mut executor_task_log = vec![];
-    
-                    for step in step_sequence.into_iter() {
-                        worker.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-                            message: step.clone()
-                        }).unwrap())).await;
+        // create a detailed step by step plan on how to tackle the problem
+        let plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
+            ("tools", format!("{:#?}", agent.tools)),
+            ("prompt", blueprint)
+        ])).await?;
 
-                        let response = match worker.invoke_flow(step.clone()).await {
-                            Ok(resp) => resp,
-                            Err(e) => {
-                                println!("Error executing step `{}`: {}", step, e);
-                                continue;
-                            },
-                        };
-                        executor_task_log.push((
-                            Message::user(step.clone()), 
-                            response
-                        ));
-                    }
 
-                    let _ = worker.save_history(format!("executor_run_{}.json", i));
-                    executor_task_log
-    
-                };
-                i += 1;
-                executor_fututres.push(executor_future);
-            
-            }
+        // save plan to file
+        serde_json::to_writer_pretty(std::fs::File::create("last_plan.json").unwrap(), &plan).unwrap();
 
-            agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-                message: "Constructing answer...".into()
-            }).unwrap())).await;
-    
-            let executor_results = join_all(executor_fututres).await;
-            let mut past_steps: Vec<(String, String)> = Vec::new();
-    
-            for executor_task_log in executor_results {
-                for (task, response) in executor_task_log {
-                    past_steps.push((
-                        task.content.unwrap_or_default(), 
-                        response.content.unwrap_or_default()
+
+        let mut i = 0;
+        let mut executor_fututres = vec![];
+        for step_sequence in plan.steps.into_iter() {
+            let worker_clone = executor_agent.clone();
+            // let prompt_clone = prompt.clone();
+            let executor_future = async move {
+                let mut worker = worker_clone;
+                let mut executor_task_log = vec![];
+
+                for step in step_sequence.into_iter() {
+                    worker.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                        message: step.clone()
+                    }).unwrap())).await;
+
+                    let response = match worker.invoke_flow(step.clone()).await {
+                        Ok(resp) => resp,
+                        Err(e) => {
+                            println!("Error executing step `{}`: {}", step, e);
+                            continue;
+                        },
+                    };
+                    executor_task_log.push((
+                        Message::user(step.clone()), 
+                        response
                     ));
                 }
+
+                let _ = worker.save_history(format!("executor_run_{}_conversation.json", i));
+                executor_task_log
+
+            };
+            i += 1;
+            executor_fututres.push(executor_future);
         
-            }
-            
-            let aggregated_history = past_steps
-                .iter()
-                .enumerate()
-                .map(|(i, (task, response))| {
-                    format!(
-                        "### Step {}\nUser Instruction:\n{}\n\nExecutor Response:\n{}\n ",
-                        i + 1,
-                        task.trim(),
-                        response.trim()
-                    )
-                })
-                .collect::<Vec<String>>()
-                .join("\n\n---\n\n");
-    
-            flow_histroy.push(Message::tool(aggregated_history, "0"));
-    
-
-
-        } else {
-            flow_histroy.push(Message::tool(FAQ.unwrap_or_default(), "1"));
         }
 
+        agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+            message: "Constructing answer...".into()
+        }).unwrap())).await;
+
+        let executor_results = join_all(executor_fututres).await;
+        let mut past_steps: Vec<(String, String)> = Vec::new();
+
+        for executor_task_log in executor_results {
+            for (task, response) in executor_task_log {
+                past_steps.push((
+                    task.content.unwrap_or_default(), 
+                    response.content.unwrap_or_default()
+                ));
+            }
+    
+        }
         
+        let aggregated_history = past_steps
+            .iter()
+            .enumerate()
+            .map(|(i, (task, response))| {
+                format!(
+                    "### Step {}\nUser Instruction:\n{}\n\nExecutor Response:\n{}\n ",
+                    i + 1,
+                    task.trim(),
+                    response.trim()
+                )
+            })
+            .collect::<Vec<String>>()
+            .join("\n\n---\n\n");
+
+        flow_histroy.push(Message::tool(aggregated_history, "0"));
 
 
-        
-        flow_histroy.push(Message::user(prompt));
+
+    }
+
+    
 
 
-        let mut conversation_history = agent.history.clone();
-        agent.history = flow_histroy;
-        
-        let response = invoke_without_tools(agent).await?;
-        conversation_history.push(response.message.clone());
-        
-        let _ = agent.save_history("urska_conversation.json".to_string());
+    
+    flow_histroy.push(Message::user(prompt));
 
-        agent.history = conversation_history;
 
-        agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
-        Ok(response.message)
-    })    
+    let mut conversation_history = agent.history.clone();
+    agent.history = flow_histroy;
+    
+    let response = invoke_without_tools(agent).await?;
+    conversation_history.push(response.message.clone());
+    
+    let _ = agent.save_history("urska_conversation.json".to_string());
+
+    agent.history = conversation_history;
+
+    agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
+    Ok(response.message)
 }
 
 
 pub async fn build_urska() -> Result<Agent, AgentBuildError> {
 
     let system_prompt = r#"
-    You are **Urška**, a helpful, knowledgeable, and reliable assistant for the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
-    Your task is to help students access the knowledge and information about the university. 
+You are **Urška**, a helpful, knowledgeable, and reliable assistant for the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
+Your task is to help students access accurate knowledge and information about the university.
 
-    When the user asks a question, the question is split into multiple tasks and each task executed producing a result.
-    You will recieve the results of the task, which hopefully are enough to answe the user's query.
+When the user asks a question, the question is split into multiple tasks and each task executed producing a result.
+You will receive the results of the tasks, which should be enough to answer the user’s query.
 
-    ### What you will receive
-    * A conversation history in which  
-    1. `User` messages describe tasks that were executed.  
-    2. `Assistant` messages contain the raw results, observations, and any source URLs.
+---
 
-    ### Your final task
-    Write **one cohesive report** that directly answers the user’s original objective.  
-    The final `User` message in the log restates that objective and tells you to begin.
+## What you will receive
 
-    ---
+* A conversation history in which
 
-    ## Report structure
+1. `User` messages describe tasks that were executed.
+2. `Assistant` messages contain the raw results, observations, and any source URLs.
 
-    1. **Direct summary**  
-    Open with a single concise paragraph (no heading) that answers the core question.
+The **final `User` message** in the log restates the objective and tells you to begin.
 
-    2. **Markdown body**  
-    Use headings (`##`), sub‑headings (`###`), **bold** for emphasis, and bulleted or numbered lists to organise the rest of the content.
+---
 
-    3. **Narrative from data**  
-    Weave the key findings into a logical story. Do **not** simply list results.
+## Your final task
 
-    4. **Citations**  
-    * Extract source URLs from the execution log.  
-    * Attach an inline citation immediately after each sourced fact, using a numbered link: `[1](http://example.com)`.  
-    * End the report with a `## References` section listing the full URLs in numeric order.  
+Write **one cohesive report** that directly answers the user’s original objective.
+The report must be faithful to the execution log, clear, and useful to the student.
 
-    *Citation example*  
+---
 
-    > The programme coordinator is Dr. Jane Doe [1](http://example.com/dr‑jane‑doe).  
-    > Admission requires a completed bachelor’s degree [2](http://example.com/admission‑requirements).  
-    >  
-    > ## References  
-    > [1] http://example.com/dr‑jane‑doe  
-    > [2] http://example.com/admission‑requirements  
+## Report structure
 
-    5. **Next steps**  
-    After the references, add `### Next Steps` with one or two helpful follow‑up questions or actions.
+1. **Direct summary**
 
-    ---
+   * Begin with a single concise paragraph (no heading) that directly answers the core question.
 
-    ## Critical constraints
+2. **Markdown body**
 
-    * **Never mention your internal process or the tools used**; focus solely on providing the user with the 
-    information that was uncovered and the user might want to know.  
-    * **Base every statement strictly on the log content**.   
-    * Deliver the entire report as a single, self‑contained message.
-    * Include all relevant links. All links included should be existing links and found in the conversations. 
+   * Use headings (`##`), sub-headings (`###`), **bold** for emphasis, and bulleted or numbered lists to organise content.
 
-    skip and DO NOT include references if there is no relevant links. 
-    Never use example.com or similar placeholders.
+3. **Narrative from data**
 
-    GENERAL HINTS:
-    - https://www.famnit.upr.si/en/education/enrolment <- contains enrollement deadlines, links to fees,...
-    - When writing numbers the source text might use comma instead of dot for decimal point. Output a dot.
-    - Be careful to correctly copy urls, especially if they contain ids, etc (for example /static/3775).
+   * Weave findings into a logical story, not just raw lists.
+   * Explicitly mention when relevant information could not be retrieved or was missing in the log.
+
+4. **Citations**
+
+   * Every factual statement must have a citation if a source URL is present in the log.
+   * Insert inline citations immediately after the relevant statement in the form `[1](url)`.
+   * Order citations by first appearance in the text.
+   * End with a `## References` section listing all URLs in numeric order.
+   * Do **not** include references if no URLs exist in the log.
+   * Never omit or renumber inconsistently.
+
+5. **Next steps**
+
+   * After references, add `### Next Steps` with one or two possible follow-ups.
+   * These must be grounded in the log (e.g. “review scholarship fund page” or “contact Student Services listed in the log”).
+   * Do not invent generic advice.
+
+---
+
+## Critical constraints
+
+* **Strict grounding**
+
+  * Base **every statement strictly on the log content**.
+  * If the log contains conflicting or incomplete information, acknowledge that explicitly.
+  * Do not add interpretations, assumptions, or extrapolations beyond the log.
+
+* **Systematic citation discipline**
+
+  * Never introduce uncited claims.
+  * Always tie statements to the first available relevant URL.
+  * Ensure numbering in body and `## References` matches exactly.
+
+* **Missing data handling**
+
+  * If the log shows missing or failed retrievals (e.g. system errors, absent FAQ entries, duplicates in programme lists), mention that clearly.
+  * Do not try to fill the gap with invented or generalised content.
+
+* **No placeholders**
+
+  * Never use fake URLs (like example.com). Only use URLs that appear in the log.
+
+* **Self-contained**
+
+  * Deliver the entire report as a single, complete message.
+
+* **No internal details**
+
+  * Do not mention the splitting into tasks, the tools used, or system memory.
+
+* **Style rules**
+
+  * If numbers in the source use commas for decimals, output with a dot.
+  * Copy URLs exactly, including IDs or path segments (e.g. `/static/3775`).
+
+---
+
+## General Hints
+
+* Enrollment deadlines, fees, and related information are usually found at: [https://www.famnit.upr.si/en/education/enrolment](https://www.famnit.upr.si/en/education/enrolment)
+* Always double-check that each factual point corresponds to the log.
+* If the log is incomplete, contradictory, or inconclusive, say so directly.
+
     "#;
 
     AgentBuilder::default()
         .set_system_prompt(system_prompt)
-        .set_flow(Flow::Custom(plan_and_execute_flow))
+        .set_flow(flow!(plan_and_execute_flow))
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
 
         // .set_model("gemma3:270m")
