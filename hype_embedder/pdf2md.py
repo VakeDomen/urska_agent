@@ -1,99 +1,89 @@
 #!/usr/bin/env python3
-"""
-pdf_to_markdown.py: Convert PDF(s) directly to structured Markdown using the Marker library
-"""
 import argparse
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Tuple, List
+
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
 from marker.output import text_from_rendered
 
-import os
+# try Mammoth for DOCX
+try:
+    import mammoth  # type: ignore
+    HAS_MAMMOTH = True
+except ImportError:
+    HAS_MAMMOTH = False
 
-from docx import Document
-
-def convert_docx_to_markdown(docx_path: Path, output_dir: Path) -> None:
-    """
-    Convert a DOCX to Markdown (basic text + paragraphs).
-    """
+def convert_pdf_to_markdown(pdf_path: Path, output_dir: Path, use_llm: bool) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    doc = Document(docx_path)
-    lines = []
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if text:
-            lines.append(text)
-
-    markdown = "\n\n".join(lines)
-
-    md_path = output_dir / f"{docx_path.stem}.md"
-    md_path.write_text(markdown, encoding="utf-8")
-    print(f"Written Markdown to {md_path}")
-
-def convert_to_markdown(file_path: Path, output_dir: Path, use_llm: bool) -> None:
-    if file_path.suffix.lower() == ".pdf":
-        convert_pdf_to_markdown(file_path, output_dir, use_llm)
-    elif file_path.suffix.lower() == ".docx":
-        convert_docx_to_markdown(file_path, output_dir)
-    else:
-        print(f"Skipping unsupported file: {file_path}")
-
-
-def convert_pdf_to_markdown(
-    pdf_path: Path,
-    output_dir: Path,
-    use_llm: bool
-) -> None:
-    """
-    Convert a PDF to Markdown and extract images using Marker.
-
-    Args:
-        pdf_path: Path to the input PDF file.
-        output_dir: Directory where output .md and images will be saved.
-        use_llm: Whether to boost accuracy using an LLM (requires additional setup).
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     converter = PdfConverter(artifact_dict=create_model_dict())
     rendered = converter(str(pdf_path))
     markdown, metadata, images = text_from_rendered(rendered)
 
-    # Write Markdown
-    md_filename = pdf_path.stem + ".md"
-    md_path = output_dir / md_filename
+    md_path = output_dir / f"{pdf_path.stem}.md"
     md_path.write_text(markdown, encoding="utf-8")
     print(f"Written Markdown to {md_path}")
 
-    # Write extracted images
     for idx, img in enumerate(images, start=1):
-        img_name = f"{pdf_path.stem}_image_{idx}.png"
-        img_path = output_dir / img_name
+        img_path = output_dir / f"{pdf_path.stem}_image_{idx}.png"
         with open(img_path, "wb") as f:
             f.write(img)
     if images:
         print(f"Extracted {len(images)} image(s) to {output_dir}")
 
+def _mammoth_image_handler(output_dir: Path, stem: str):
+    # returns a function Mammoth uses to write images and return md links
+    def handler(image):
+        ext = image.content_type.split("/")[-1] or "png"
+        existing = list(output_dir.glob(f"{stem}_image_*.{ext}"))
+        next_idx = len(existing) + 1
+        filename = f"{stem}_image_{next_idx}.{ext}"
+        path = output_dir / filename
+        with path.open("wb") as f:
+            f.write(image.read())
+        return {"src": filename}
+    return handler
 
+def convert_docx_to_markdown(docx_path: Path, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not HAS_MAMMOTH:
+        raise RuntimeError(
+            "mammoth is not installed. Install it with: pip install mammoth"
+        )
+
+    with open(docx_path, "rb") as f:
+        result = mammoth.convert_to_markdown(
+            f,
+            convert_image=mammoth.images.inline(_mammoth_image_handler(output_dir, docx_path.stem))
+        )
+    markdown = result.value
+    messages = result.messages  # warnings, missing styles, etc.
+
+    md_path = output_dir / f"{docx_path.stem}.md"
+    md_path.write_text(markdown, encoding="utf-8")
+    print(f"Written Markdown to {md_path}")
+    if messages:
+        for m in messages:
+            print(f"[mammoth] {m.type}: {m.message}")
+
+def convert_to_markdown(file_path: Path, output_dir: Path, use_llm: bool) -> None:
+    suf = file_path.suffix.lower()
+    if suf == ".pdf":
+        convert_pdf_to_markdown(file_path, output_dir, use_llm)
+    elif suf == ".docx":
+        convert_docx_to_markdown(file_path, output_dir)
+    else:
+        print(f"Skipping unsupported file: {file_path}")
 
 def iter_docs(root: Path) -> Iterable[Path]:
-    """
-    Yield all supported files (PDF, DOCX) under root, at any depth.
-    """
     if root.is_file() and root.suffix.lower() in [".pdf", ".docx"]:
         yield root
     elif root.is_dir():
         for ext in ("*.pdf", "*.docx"):
             yield from root.rglob(ext)
 
-
-
 def process_input(input_path: Path, output_dir: Path, use_llm: bool) -> None:
-    """
-    Process a single PDF/DOCX or every supported file under a directory recursively.
-    Preserves the input directory structure inside output_dir.
-    """
     base = input_path if input_path.is_dir() else input_path.parent
     total = 0
     errors = 0
@@ -113,31 +103,13 @@ def process_input(input_path: Path, output_dir: Path, use_llm: bool) -> None:
     else:
         print(f"Done. Converted {total} file(s). Errors: {errors}")
 
-
 def main():
-    parser = argparse.ArgumentParser(
-        description="Convert PDF(s) to Markdown using Marker library"
-    )
-    parser.add_argument(
-        "input",
-        type=Path,
-        help="Path to a PDF file or a directory containing PDFs"
-    )
-    parser.add_argument(
-        "-o", "--output-dir",
-        type=Path,
-        default=Path("."),
-        help="Directory to save the output Markdown and images"
-    )
-    parser.add_argument(
-        "--use-llm",
-        action="store_true",
-        help="Enhance conversion accuracy using an LLM"
-    )
+    parser = argparse.ArgumentParser(description="Convert PDFs and DOCX to Markdown")
+    parser.add_argument("input", type=Path, help="Path to a file or directory")
+    parser.add_argument("-o", type=Path, dest="output_dir", default=Path("."), help="Output directory")
+    parser.add_argument("--use-llm", action="store_true", help="Boost PDF accuracy with an LLM if configured")
     args = parser.parse_args()
-
     process_input(args.input, args.output_dir, args.use_llm)
-
 
 if __name__ == "__main__":
     main()

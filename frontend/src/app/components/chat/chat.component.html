@@ -20,6 +20,7 @@
         [messages]="messages"
         [newToken]="lastToken"  
         [stateMessage]="stateMessage"
+        [queuePosition]="queuePosition"
       ></message-list>
       <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
     </div>

@@ -1,9 +1,8 @@
-use std::sync::Arc;
+use std::{clone, sync::Arc};
 
 use actix::prelude::*;
 use actix_web::{Error, HttpRequest, HttpResponse, web};
 use actix_web_actors::ws;
-use futures::StreamExt;
 use rmcp::{
     model::{CallToolRequestParam, ProgressNotificationParam},
     service::RunningService,
@@ -12,8 +11,8 @@ use rmcp::{
     ServiceExt,                        // for .serve()
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use tokio::sync::{mpsc, Mutex};
+use serde_json::{Map, Value};
+use tokio::sync::{mpsc::{self, Receiver}, Mutex};
 
 // -- messages exchanged with the front end --
 
@@ -27,6 +26,7 @@ struct FrontendMessage {
 enum BackendMessage {
     Chunk(String),
     Notification(String),
+    QueuePosition(PositionInQueue),
     End,
 }
 
@@ -34,7 +34,7 @@ enum BackendMessage {
 
 #[derive(Debug)]
 struct ProgressHandler {
-    tx: mpsc::Sender<ProgressNotificationParam>,
+    notification_tx: mpsc::Sender<ProgressNotificationParam>,
 }
 
 impl ClientHandler for ProgressHandler {
@@ -43,8 +43,7 @@ impl ClientHandler for ProgressHandler {
         params: ProgressNotificationParam,
         _ctx: rmcp::service::NotificationContext<rmcp::RoleClient>,
     ) {
-        // simply forward the raw param into our channel
-        let _ = self.tx.send(params).await;
+        let _ = self.notification_tx.send(params).await;
     }
 }
 
@@ -53,15 +52,17 @@ impl ClientHandler for ProgressHandler {
 pub async fn ws_index(
     req: HttpRequest,
     stream: web::Payload,
+    queue: web::Data<Arc<Mutex<queue::QueueManager>>>,
 ) -> Result<HttpResponse, Error> {
+    
     // 1) channel for progress notifications
-    let (notif_tx, notif_rx) = mpsc::channel::<ProgressNotificationParam>(32);
+    let (notification_tx, notif_rx) = mpsc::channel::<ProgressNotificationParam>(32);
 
     // 2) start SSE transport + MCP client with our ProgressHandler
     let transport = StreamableHttpClientTransport::from_uri("http://localhost:8004/mcp");
 
 
-    let handler = ProgressHandler { tx: notif_tx };
+    let handler = ProgressHandler { notification_tx: notification_tx };
     let client: RunningService<_, _> = handler
         .serve(transport)
         .await
@@ -70,11 +71,13 @@ pub async fn ws_index(
             actix_web::error::ErrorInternalServerError("MCP connect error")
         })?;
 
+    let queue = queue.get_ref().clone();
     // 3) hand off to our ChatSession actor
     ws::start(
         ChatSession {
             mcp_client: client,
-            notif_rx: Arc::new(Mutex::new(notif_rx)),
+            notification_reciever: Arc::new(Mutex::new(notif_rx)),
+            queue,
         },
         &req,
         stream,
@@ -86,11 +89,14 @@ pub async fn ws_index(
 #[derive(Debug)]
 struct ChatSession {
     mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
-    notif_rx: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
+    notification_reciever: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
+    queue: Arc<Mutex<QueueManager>>
 }
 
 // at top of session.rs, add:
 use actix::Message;
+
+use crate::queue::{self, PositionInQueue, QueueManager, QueueMessage};
 
 // define an internal actor‐message for sending WS text
 struct SendWsText(pub String);
@@ -115,16 +121,22 @@ impl Actor for ChatSession {
     fn started(&mut self, ctx: &mut Self::Context) {
         // 1) take the actor address
         let addr = ctx.address();
-        println!("New actor: {:#?}", self);
+        println!("New actor connected...");
 
         // 2) clone your receiver
-        let notif_rx = self.notif_rx.clone();
+        let notification_reciever = self.notification_reciever.clone();
 
         // 3) spawn a tokio task (or actix::spawn) that lives 'static
+        // thread that forwards notifications | mcp -> BE -(here)> client
         actix::spawn(async move {
-            while let Some(params) = notif_rx.lock().await.recv().await {
+            while let Some(notification_params) = notification_reciever
+                .lock()
+                .await
+                .recv()
+                .await 
+            {
                 // here you own `addr` and can use it
-                let text = params
+                let text = notification_params
                     .message
                     .clone()
                     .unwrap_or_else(|| "▱".to_string());
@@ -150,39 +162,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
             Ok(ws::Message::Text(txt)) => {
                 // parse the prompt request
                 if let Ok(req) = serde_json::from_str::<FrontendMessage>(&txt) {
-                    let mut client = self.mcp_client.clone();
-                    let addr = ctx.address();
-                    // spawn an async task in the actor to call the tool
-                    let _a = ctx.spawn(
-                        async move {
-                            // build the tool call
-                            // println!("Calling tool!");
-
-                            let mut args = Map::new();
-                            args.insert("question".to_owned(), Value::String(req.question.clone()));
-
-                            let call = CallToolRequestParam {
-                                name: "ask_urska".into(),
-                                arguments: Some(args),
-                            };
-                            // call the tool (fires progress events to our handler)
-                            let result = client.call_tool(call).await;
-                            // println!("Tool result: {:#?}", result);
-                            if let Err(e) = &result {
-                                // on error, send it as a chunk
-                                let err_msg = BackendMessage::Chunk(format!(
-                                    "[Tool error] {}",
-                                    e
-                                ));
-                                let _ = addr.do_send(SendWsText(serde_json::to_string(&err_msg).unwrap()));
-                            }
-
-                            // once done, send the End marker
-                            let end = BackendMessage::End;
-                            addr.do_send(SendWsText(serde_json::to_string(&end).unwrap()));
-                        }
-                        .into_actor(self),
-                    );
+                    self.handle_message_from_client(ctx, req);
                     
                 }
             }
@@ -193,5 +173,99 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
 
             }
         }
+    }
+}
+
+impl ChatSession {
+    fn handle_message_from_client(
+        &mut self, 
+        ctx: &mut ws::WebsocketContext<ChatSession>,
+        message: FrontendMessage,
+    ) {
+
+        println!("Message");
+        let client = self.mcp_client.clone();
+        let addr = ctx.address();
+        let queue = self.queue.clone();
+        
+        
+        
+        actix::spawn(async move {
+
+            let mut job_id: Option<uuid::Uuid> = None;
+            
+            let mut reciever: Receiver<QueueMessage> = {
+                queue
+                    .lock()
+                    .await
+                    .enter_queue()
+                    .await
+            };    
+
+            {
+                while let Some(message) = reciever
+                    .recv()
+                    .await
+                {
+                    match message {
+                        queue::QueueMessage::StartJob(uuid) => {
+                            job_id = Some(uuid);
+                            break;
+                        },
+                        queue::QueueMessage::PositionUpade(position) => {
+                            let end = BackendMessage::QueuePosition(position);
+                            let content = serde_json::to_string(&end).unwrap();
+                            let message = SendWsText(content);
+                            if let Err(e) = addr.try_send(message) {
+                                println!("Something went wrong: {:#?}", e)
+                            } 
+                            continue;
+                        },
+                    };
+                    
+                }
+            }
+
+            let mut urska_argument_map = Map::new();
+
+            urska_argument_map.insert(
+                "question".to_string(), 
+                Value::String(message.question.clone())
+            );
+                
+
+            let fn_call_request = CallToolRequestParam {
+                name: "ask_urska".into(),
+                arguments: Some(urska_argument_map),
+            };
+
+            
+            let result = client
+                .call_tool(fn_call_request)
+                .await;
+
+            
+            if let Err(e) = &result {
+                let error_conetent = format!("[Tool error] {}",e);
+                let err_msg = BackendMessage::Chunk(error_conetent);
+                let content = serde_json::to_string(&err_msg).unwrap();
+                let message = SendWsText(content);
+                let _ = addr.do_send(message);
+            }
+
+            // once done, send the End marker
+            let end = BackendMessage::End;
+            let content = serde_json::to_string(&end).unwrap();
+            let message = SendWsText(content);
+            addr.do_send(message);
+            
+            queue
+                .clone()
+                .lock()
+                .await
+                .notify_done(job_id.unwrap())
+                .await;
+
+        });
     }
 }

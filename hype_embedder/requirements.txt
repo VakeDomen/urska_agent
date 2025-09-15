@@ -9,4 +9,4 @@ tqdm
 marker
 marker-pdf
 legacy-cgi
-python-docx
+mammoth

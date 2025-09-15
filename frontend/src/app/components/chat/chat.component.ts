@@ -14,7 +14,7 @@ import { Notification, BackendNotification } from '../../models/notification.mod
     MessageListComponent,
     ChatInputComponent,
     SidePanelComponent,
-],
+  ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -24,6 +24,7 @@ export class ChatComponent implements OnInit {
   public notifications: Notification[] = [];
   public resultNotifications: Notification[] = [];
   public stateMessage: String | undefined;
+  public queuePosition: number = 0;
   public lastToken: String | undefined;
   public leftSideOpen = false;
   public rightSideOpen = false;
@@ -31,13 +32,12 @@ export class ChatComponent implements OnInit {
   private socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
   public socketStatus: 'connecting' | 'open' | 'closed' = 'connecting';
 
-  constructor(private cdr: ChangeDetectorRef) {}
+  constructor(private cdr: ChangeDetectorRef) { }
 
   ngOnInit() {
-    // 👇 2. Add listeners for WebSocket lifecycle events
     this.socket.onopen = () => {
       this.socketStatus = 'open';
-      this.cdr.detectChanges(); 
+      this.cdr.detectChanges();
       console.log("OPEN")
     };
 
@@ -50,77 +50,80 @@ export class ChatComponent implements OnInit {
       this.socketStatus = 'closed';
       this.cdr.detectChanges();
     };
-    
+
     this.socket.onmessage = (ev: MessageEvent) => {
-        const msg = JSON.parse(ev.data);
+      const msg = JSON.parse(ev.data);
 
-        if (msg.type === 'Notification') {
-          const backendNotification = JSON.parse(msg.data) as BackendNotification;
-
-          // Check if this is the final 'Done' notification
-          if (
-            backendNotification.agent === 'Urška' &&
-            'Token' in backendNotification.content
-          ) {
-            this.lastToken = backendNotification.content.Token.value;
-            this.cdr.detectChanges();
-            return
-          }
-
-          if ('Token' in backendNotification.content) {
-            return;
-          }
+      if (msg.type === "QueuePosition") {
+        this.handleQueuePositionMessage(msg);
+      }
 
 
-          if ('Custom' in backendNotification.content) {
-            this.stateMessage = backendNotification.content.Custom.message;
-          }
+      if (msg.type === 'Notification') {
+        this.handleNotificationMessage(msg);
+      }
 
-          if (
-            backendNotification.agent === 'Urška' && // Changed from '===' to 'startsWith' for more flexibility
-            'Done' in backendNotification.content &&
-            Array.isArray(backendNotification.content.Done)
-          ) {
-            // It's the final answer. Add it to chat and close the panel.
-            // this.messages.push({
-            //   role: 'assistant',
-            //   content: backendNotification.content.Done[1],
-            //   timestamp: new Date(),
-            // });
-            this.isProcessing = false;
-            this.rightSideOpen = false;
-            this.leftSideOpen = false;
-          } else {
-            const arrivalTime = Date.now();
-            const lastNotification = this.notifications[this.notifications.length - 1];
-            const timeDelta = lastNotification 
-              ? (arrivalTime - lastNotification.arrivalTime) / 1000 
-              : undefined;
-
-            const notification = {
-              ...backendNotification,
-              id: this.notifications.length,
-              expanded: false,
-              rawExpanded: false,
-              systemPromptVisible: false,
-              taskVisible: false,
-              arrivalTime, 
-              timeDelta,
-            }
-
-            if ('ToolCallSuccessResult' in backendNotification.content) {
-              this.leftSideOpen = true;
-              this.resultNotifications.push(notification)
-            } else {
-              this.notifications.push(notification)
-            }
-
-            // this.notifications.push();
-          }
-        }
-        
-        this.cdr.detectChanges();
+      this.cdr.detectChanges();
     };
+  }
+  handleNotificationMessage(msg: any) {
+    // we seem to be no longer in queue
+    this.queuePosition = 0;
+
+    const backendNotification = JSON.parse(msg.data) as BackendNotification;
+    if (
+      backendNotification.agent === 'Urška' &&
+      'Token' in backendNotification.content
+    ) {
+      this.lastToken = backendNotification.content.Token.value;
+      this.cdr.detectChanges();
+      return
+    }
+
+    if ('Token' in backendNotification.content) {
+      return;
+    }
+
+
+    if ('Custom' in backendNotification.content) {
+      this.stateMessage = backendNotification.content.Custom.message;
+    }
+
+    if (
+      backendNotification.agent === 'Urška' &&
+      'Done' in backendNotification.content &&
+      Array.isArray(backendNotification.content.Done)
+    ) {
+      // It's the final answer. Add it to chat and close the panel.
+      this.isProcessing = false;
+      this.rightSideOpen = false;
+      this.leftSideOpen = false;
+    } else {
+      const arrivalTime = Date.now();
+      const lastNotification = this.notifications[this.notifications.length - 1];
+      const timeDelta = lastNotification
+        ? (arrivalTime - lastNotification.arrivalTime) / 1000
+        : undefined;
+
+      const notification = {
+        ...backendNotification,
+        id: this.notifications.length,
+        expanded: false,
+        rawExpanded: false,
+        systemPromptVisible: false,
+        taskVisible: false,
+        arrivalTime,
+        timeDelta,
+      }
+
+      if ('ToolCallSuccessResult' in backendNotification.content) {
+        this.leftSideOpen = true;
+        this.resultNotifications.push(notification)
+      } else {
+        this.notifications.push(notification)
+      }
+
+    }
   }
 
   sendPrompt(prompt: string) {
@@ -137,8 +140,7 @@ export class ChatComponent implements OnInit {
       content: "",
       timestamp: new Date(),
     })
-    
-    // Clear old notifications and open the panel for the new request
+
     this.notifications = [];
     this.isProcessing = true;
     this.rightSideOpen = true;
@@ -146,13 +148,11 @@ export class ChatComponent implements OnInit {
     this.socket.send(JSON.stringify({ question: prompt }));
   }
 
-  // --- Hover Handlers for Manual Control ---
   handleRightPanelEnter() {
     this.rightSideOpen = true;
   }
 
   handleRightPanelLeave() {
-    // Only close the panel on mouse leave if we are not actively processing a request.
     if (!this.isProcessing) {
       this.rightSideOpen = false;
     }
@@ -163,9 +163,13 @@ export class ChatComponent implements OnInit {
   }
 
   handleLeftPanelLeave() {
-    // Only close the panel on mouse leave if we are not actively processing a request.
     if (!this.isProcessing) {
       this.leftSideOpen = false;
     }
+  }
+
+
+  handleQueuePositionMessage(msg: any) {
+    this.queuePosition = +msg.data;
   }
 }

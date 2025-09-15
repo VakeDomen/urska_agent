@@ -6,6 +6,13 @@
     <div class="message-row">
 
       <div *ngIf="msg.role === 'assistant'" class="message-bubble">
+        @if(queuePosition > 0) {
+          <div>
+            Server is busy, waiting for my turn (Queue position {{ queuePosition }})
+          </div>
+        } 
+
+
         <div *ngIf="!msg.content && stateMessage" class="thinking-box">
           <h4 class="thinking-header"><span *ngIf="!msg.content" class="loader"></span> 🤔 Thinking...</h4>
           <div class="thinking-content" #scrollContainerThink>

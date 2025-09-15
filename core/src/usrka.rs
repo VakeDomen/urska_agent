@@ -322,7 +322,7 @@ The report must be faithful to the execution log, clear, and useful to the stude
 
 * **Style rules**
 
-  * If numbers in the source use commas for decimals, output with a dot.
+  * Output numbers with a decimal comma and never use dots in numbers (3.5k€ -> 3500,00€).
   * Copy URLs exactly, including IDs or path segments (e.g. `/static/3775`).
 
 ---
@@ -357,7 +357,6 @@ The report must be faithful to the execution log, clear, and useful to the stude
         .set_top_k(20)
         .set_min_p(0.0)
         .set_presence_penalty(0.1)
-        .set_max_iterations(2)
         .set_stream(true)
         .build()
         .await
