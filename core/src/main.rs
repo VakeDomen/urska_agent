@@ -21,6 +21,7 @@ mod blueprint;
 mod planner;
 mod prompt_reconstuct;
 mod quick_responder;
+mod function_filter;
 mod urska_v2;
 
 const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";

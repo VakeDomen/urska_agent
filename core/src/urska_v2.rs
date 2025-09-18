@@ -7,14 +7,14 @@ use serde::Serialize;
 use serde_json::{json, to_value};
 use tokio::sync::mpsc::Receiver;
 
-use crate::{prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}, *};
+use crate::{function_filter::{build_function_filter_agent, Requirement}, prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}, *};
 
 
 
 async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
-    urska.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-        message: "Preparing...".into()
-    }).unwrap())).await;
+    
+    send_notiifcation(urska, "Preparing...").await;
+
     let (function_filter_agent, filter_notification_channel) = build_function_filter_agent(urska).await?;
     let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&urska).await?;
     
@@ -23,9 +23,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
 
 
     if urska.history.len() > 2 {
-        urska.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-            message: "Assessing query...".into()
-        }).unwrap())).await;
+        
 
         let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
             ("history", history_to_prompt(&urska.history)),
@@ -37,9 +35,9 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
         }
     }
 
-    urska.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-        message: "Searching for tools".into()
-    }).unwrap())).await;
+    send_notiifcation(urska, "Searching for tools...").await;
+
+
     let mut filter_futures  = vec![];
     if let Some(tools) = &urska.tools {
         for tool in tools {
@@ -109,9 +107,8 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
                 continue;
             };
 
-            urska.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-                message: format!("Checking for information with {}...", tool_name)
-            }).unwrap())).await;
+            
+            send_notiifcation(urska, format!("Checking for information with {}...", tool_name)).await;
 
 
             tool_calls.push(into_tool_call(ToolCallFunction { 
@@ -126,10 +123,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
     let mut context_chunks = vec![];
     
     for tool_response in tool_responses {
-        urska.notify(NotificationContent::Custom(to_value(&UrskaNotification {
-            message: format!("Checking tool retults...")
-        }).unwrap())).await;
-
+        send_notiifcation(urska, "Checking tool retults...").await;
         context_chunks.push(format!("# Tool resulted in:\n\n{}", tool_response.content.unwrap_or_default()));
     }
 
@@ -294,7 +288,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         // .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
-        .add_mcp_server(McpServerType::streamable_http(MEMORY_URL))
+        // .add_mcp_server(McpServerType::streamable_http(MEMORY_URL))
         .add_mcp_server(McpServerType::streamable_http(RAG_PAGE_SERVICE))
         .add_mcp_server(McpServerType::streamable_http(RAG_RULES_SERVICE))
         .add_mcp_server(McpServerType::streamable_http(RAG_FAQ_SERVICE))
@@ -311,33 +305,6 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 }
 
 
-#[derive(Debug, JsonSchema, Deserialize)]
-struct Requirement {
-    function_usage_required: bool,
-}
-
-async fn build_function_filter_agent(urska: &mut Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
-    let system_prompt = r#"
-    You will be given a prompt and a function.
-    Your task is to asses wether the useage of the given function is appropriate to answer the user query.
-    "#;
-
-    let template = Template::simple("# function to assess: \n\n {{function}}\n\n# User query:\n\n{{question}}");
-
-    StatelessPrebuild::reply_without_tools()
-        .set_name("Source Filter")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
-        .import_client_config(urska.export_client_config())
-        .import_model_config(urska.export_model_config())
-        .import_prompt_config(urska.export_prompt_config().await.unwrap_or_default())
-        .set_system_prompt(system_prompt)
-        .set_template(template)
-        .set_response_format(serde_json::to_string_pretty(&schema_for!(Requirement)).unwrap())
-        .build_with_notification()
-        .await
-}
-
-
 
 fn into_tool_call(function: ToolCallFunction) -> ToolCall {
     ToolCall {
@@ -345,4 +312,12 @@ fn into_tool_call(function: ToolCallFunction) -> ToolCall {
         tool_type: ToolType::Function,
         function
     }
+}
+
+
+
+async fn send_notiifcation<T>(agent: &mut Agent, message: T) where T: Into<String> {
+    agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+        message: message.into()
+    }).unwrap())).await;
 }

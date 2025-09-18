@@ -39,6 +39,8 @@ export class MessageListComponent implements OnChanges {
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
   @ViewChild('scrollContainerThink') private scrollContainerThink!: ElementRef;
 
+  lastMessageLenToBottom: number = 0;
+
   ngOnChanges(changes: SimpleChanges): void {
     // Append the new token to the content of the last message
     if (changes['newToken'] && this.messages.length > 0) {
@@ -49,6 +51,11 @@ export class MessageListComponent implements OnChanges {
         this.scrollChatToBottom();
         this.scrollThinkToBottom();
       }
+    }
+
+    if (this.messages.length > this.lastMessageLenToBottom) {
+      this.scrollChatToBottom();
+      this.lastMessageLenToBottom = this.messages.length;
     }
   }
 
