@@ -20,7 +20,7 @@ use crate::{
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UrskaNotification {
-    message: String,
+    pub message: String,
 }
 
 pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {

@@ -12,7 +12,7 @@ use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
 
-use crate::usrka::build_urska;
+use crate::{urska_v2::{build_urska_v2}, usrka::build_urska};
 
 mod usrka;
 mod executor;
@@ -21,6 +21,7 @@ mod blueprint;
 mod planner;
 mod prompt_reconstuct;
 mod quick_responder;
+mod urska_v2;
 
 const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";
 const MEMORY_URL: &str = "http://localhost:8002/mcp";
@@ -56,7 +57,10 @@ You are **Urška**, a helpful, knowledgeable, and reliable assistant for the Uni
         
     // --- Agent Definition ---
     
-    let agent = build_urska().await?;
+    
+
+
+    let agent = build_urska_v2().await?;
 
     let conn_counter = Arc::new(AtomicI32::new(0));
 
@@ -115,6 +119,11 @@ impl Service {
         client: Peer<RoleServer>,
         meta: Meta
     ) -> Result<CallToolResult, rmcp::Error> {
+        // let mut pre_agent = build_urska_v2().await.unwrap();
+        // let r = pre_agent.invoke_flow(question.question.clone()).await;
+        // if let Ok(resp) = r {
+        //     return Ok(CallToolResult::success(vec![Content::text(resp.content.unwrap())]));
+        // }
         let start = SystemTime::now();
         let mut agent = self.agent.lock().await;
         let mut notification_channel = match agent.new_notification_channel().await {

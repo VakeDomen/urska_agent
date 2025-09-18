@@ -106,6 +106,7 @@ export class ChatComponent implements OnInit {
     ) {
       // It's the final answer. Add it to chat and close the panel.
       this.isProcessing = false;
+      console.log("Done processing")
       // this.rightSideOpen = false;
       // this.leftSideOpen = false;
     } else {
