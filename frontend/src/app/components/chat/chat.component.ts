@@ -1,10 +1,11 @@
-import { Component, OnInit, ChangeDetectorRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, ChangeDetectionStrategy, effect, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MessageListComponent } from '../message-list/message-list.component';
 import { ChatInputComponent } from '../chat-input/chat-input.component';
 import { SidePanelComponent } from '../side-panel/side-panel.component';
 import { Message } from '../../models/message.model';
 import { Notification, BackendNotification } from '../../models/notification.model';
+import { StateService } from '../../state/state.service';
 
 @Component({
   selector: 'app-chat',
@@ -17,7 +18,7 @@ import { Notification, BackendNotification } from '../../models/notification.mod
   ],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.css'],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChatComponent implements OnInit {
   public messages: Message[] = [];
@@ -26,13 +27,22 @@ export class ChatComponent implements OnInit {
   public stateMessage: String | undefined;
   public queuePosition: number = 0;
   public lastToken: String | undefined;
-  public leftSideOpen = false;
-  public rightSideOpen = false;
+  public leftSideOpen = true;
+  public rightSideOpen = true;
+  public displayAdvanced = false;
   public isProcessing = false;
   private socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
   public socketStatus: 'connecting' | 'open' | 'closed' = 'connecting';
 
-  constructor(private cdr: ChangeDetectorRef) { }
+  constructor(
+    private cdr: ChangeDetectorRef,
+  ) { 
+    effect(() => {
+      this.displayAdvanced = (StateService.displayType() == 'advanced')
+      console.log("Heelllooo", StateService.displayType())
+      this.cdr.detectChanges();
+    });
+  }
 
   ngOnInit() {
     this.socket.onopen = () => {
@@ -96,8 +106,8 @@ export class ChatComponent implements OnInit {
     ) {
       // It's the final answer. Add it to chat and close the panel.
       this.isProcessing = false;
-      this.rightSideOpen = false;
-      this.leftSideOpen = false;
+      // this.rightSideOpen = false;
+      // this.leftSideOpen = false;
     } else {
       const arrivalTime = Date.now();
       const lastNotification = this.notifications[this.notifications.length - 1];
@@ -154,7 +164,7 @@ export class ChatComponent implements OnInit {
 
   handleRightPanelLeave() {
     if (!this.isProcessing) {
-      this.rightSideOpen = false;
+      // this.rightSideOpen = false;
     }
   }
 
@@ -164,7 +174,7 @@ export class ChatComponent implements OnInit {
 
   handleLeftPanelLeave() {
     if (!this.isProcessing) {
-      this.leftSideOpen = false;
+      // this.leftSideOpen = false;
     }
   }
 

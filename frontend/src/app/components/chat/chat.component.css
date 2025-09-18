@@ -1,9 +1,9 @@
 :host {
   display: block;
-  height: 100vh;
   width: 100vw;
   background-color: #f0f2f5;
-  overflow: hidden; /* Prevent page scroll */
+  /* overflow: hidden;  */
+  margin-top: 1%;
 }
 
 .page-container {
@@ -11,6 +11,7 @@
   justify-content: center;
   align-items: center;
   height: 100%;
+  background-color: #fffaf0;
 }
 
 
@@ -27,9 +28,10 @@
   display: flex;
   flex-direction: column;
   height: 100%; /* Keep this */
-  background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  /* background: #ffffff; */
+  background: #fffaf0;
+  /* border-radius: 12px; */
+  /* box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12); */
   z-index: 10;
   transition: transform 0.3s ease-in-out;
   flex: 1; 
@@ -42,8 +44,8 @@
   height: 100%;
   width: 400px;
   background-color: #f8f9fa;
-  border-left: 1px solid #e9ecef;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e9ecef;
+  /* box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12); */
   z-index: 5;
   display: flex;
   flex-direction: column;
@@ -83,7 +85,7 @@
   max-width: 450px;
   height: 100%;
   background: #ffffff;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  /* box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15); */
   transition: transform 0.3s ease-in-out;
   z-index: 5;
   display: flex;
@@ -101,7 +103,7 @@
 
 .side-panel-container.right {
   border-radius: 12px;
-  transform: translateX(8%);
+  transform: translateX(100%);
 }
 .side-panel-container.right.open {
   transform: translateX(100%);

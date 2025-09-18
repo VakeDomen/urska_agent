@@ -1,0 +1,147 @@
+/* Main navbar container */
+.navbar-container {
+  display: flex;
+  justify-content: space-between; /* Pushes left and right sections apart */
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  height: 35px;
+}
+
+/* Left and right sections */
+.navbar-left,
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem; /* Space between items in each section */
+}
+
+/* Brand/logo styling */
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  color: #ffc445; /* A university-like dark blue */
+}
+
+.logo-placeholder {
+  font-size: 1.8rem;
+}
+
+.brand-name {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+/* General button styling */
+.nav-button {
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.nav-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* Specific button styles */
+.toggle-button {
+  background-color: #f0f0f0;
+  color: #333;
+  border-color: #ccc;
+}
+
+.toggle-button:hover {
+  background-color: #e0e0e0;
+}
+
+.auth-button {
+  background-color: #ffc445; /* A complementary blue */
+  color: white;
+}
+
+.auth-button:hover {
+  background-color: #303f9f;
+}
+
+.switch-control {
+  /* i change in @media */
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.switch-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+}
+
+/* The switch itself - the box around the slider */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 50px; /* Width of the switch */
+  height: 28px; /* Height of the switch */
+}
+
+/* Hide the default HTML checkbox */
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+/* The slider / track */
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+  border-radius: 28px;
+}
+
+/* The moving knob */
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+/* Styles for when the switch is ON (checked) */
+input:checked + .slider {
+  background-color: #ffc445; /* Active color */
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(22px);
+  -ms-transform: translateX(22px);
+  transform: translateX(22px); /* Moves the knob to the right */
+}
+
+@media (min-width:1025px) {
+  .switch-control {
+    display: flex;
+  }
+}

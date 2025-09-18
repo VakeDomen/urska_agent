@@ -1,0 +1,29 @@
+<nav class="navbar-container">
+  <div class="navbar-left">
+    <a href="#" class="navbar-brand" [title]="pageTitle">
+      <span class="brand-name">URŠKA</span>
+    </a>
+    </div>
+
+  <div class="navbar-right">
+    <div class="switch-control">
+      <label for="advanced-toggle" class="switch-label">Advanced</label>
+      <label class="switch">
+        <input 
+          id="advanced-toggle" 
+          type="checkbox" 
+          [checked]="isAdvancedVisible"
+          (change)="toggleAdvanced()">
+        <span class="slider"></span>
+      </label>
+    </div>
+    
+    <button *ngIf="!isLoggedIn" class="nav-button auth-button" (click)="toggleLogin()">
+      Login
+    </button>
+    
+    <button *ngIf="isLoggedIn" class="nav-button auth-button" (click)="toggleLogin()">
+      Logout
+    </button>
+  </div>
+</nav>

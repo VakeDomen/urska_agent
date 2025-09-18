@@ -32,8 +32,10 @@
 }
 
 .user-message .message-bubble {
-  background-color: #0084ff;
-  color: white;
+  /* background-color: #0084ff; */
+  background-color: #c6d8ff;
+  /* color: white; */
+  color: #050505;
   border-top-right-radius: 4px;
 }
 
@@ -43,7 +45,8 @@
 }
 
 .assistant-message .message-bubble {
-  background-color: #e4e6eb;
+  /* background-color: #e4e6eb; */
+  background-color: #ffedc6;
   color: #050505;
   border-top-left-radius: 4px;
 }
@@ -104,7 +107,6 @@
   max-height: 100px; 
   overflow-y: auto; /* Allows scrolling if content exceeds the height */
   padding: 8px 12px;
-  font-family: monospace;
   font-size: 0.85em;
   color: #4b5563;
   word-wrap: break-word;
