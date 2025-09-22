@@ -5,17 +5,12 @@ use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError,
 use serde_json::{json, to_value};
 
 use crate::{
-    function_filter::{build_function_filter_agent, Requirement}, 
-    prompt_reconstuct::create_prompt_restructor_agent, 
-    usrka::{history_to_prompt, UrskaNotification},
-    *
+    agents::{function_filter::{build_function_filter_agent, Requirement}, prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}}, *
 };
-
-
 
 async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
     
-    send_notiifcation(urska, "Preparing...").await;
+    send_notifcation(urska, "Preparing...").await;
 
     let (function_filter_agent, filter_notification_channel) = build_function_filter_agent(urska).await?;
     let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&urska).await?;
@@ -25,8 +20,6 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
 
 
     if urska.history.len() > 2 {
-        
-
         let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
             ("history", history_to_prompt(&urska.history)),
             ("prompt", prompt.clone())
@@ -37,7 +30,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
         }
     }
 
-    send_notiifcation(urska, "Searching for tools...").await;
+    send_notifcation(urska, "Searching for tools...").await;
 
 
     let mut filter_futures  = vec![];
@@ -109,9 +102,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
                 continue;
             };
 
-            
-            send_notiifcation(urska, format!("Checking for information with {}...", tool_name)).await;
-
+            send_notifcation(urska, format!("Checking for information with {}...", tool_name)).await;
 
             tool_calls.push(into_tool_call(ToolCallFunction { 
                 name: tool_name.clone(), 
@@ -125,7 +116,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
     let mut context_chunks = vec![];
     
     for tool_response in tool_responses {
-        send_notiifcation(urska, "Checking tool retults...").await;
+        send_notifcation(urska, "Checking tool retults...").await;
         context_chunks.push(format!("# Tool resulted in:\n\n{}", tool_response.content.unwrap_or_default()));
     }
 
@@ -320,7 +311,7 @@ fn into_tool_call(function: ToolCallFunction) -> ToolCall {
 
 
 
-async fn send_notiifcation<T>(agent: &mut Agent, message: T) where T: Into<String> {
+async fn send_notifcation<T>(agent: &mut Agent, message: T) where T: Into<String> {
     agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
         message: message.into()
     }).unwrap())).await;

@@ -7,12 +7,12 @@ use serde::Serialize;
 use serde_json::{json, to_value};
 
 use crate::{
-    blueprint::create_blueprint_agent, 
-    executor::create_single_task_agent, 
-    planner::{create_planner_agent, Plan}, 
-    prompt_reconstuct::create_prompt_restructor_agent, 
-    quick_responder::{create_quick_response_agent, Answerable}, 
-    replanner::create_replanner_agent, 
+    agents::blueprint::create_blueprint_agent, 
+    agents::executor::create_single_task_agent, 
+    agents::planner::{create_planner_agent, Plan}, 
+    agents::prompt_reconstuct::create_prompt_restructor_agent, 
+    agents::quick_responder::{create_quick_response_agent, Answerable}, 
+    agents::replanner::create_replanner_agent, 
     MEMORY_URL, PROGRAMME_AGENT_URL, RAG_FAQ_SERVICE, 
     RAG_PAGE_SERVICE, RAG_RULES_SERVICE, SCRAPER_AGENT_URL, 
     STAFF_AGENT_URL

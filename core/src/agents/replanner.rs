@@ -2,7 +2,8 @@ use reagent_rs::{Agent, AgentBuildError, Notification,StatelessPrebuild, Templat
 use schemars::schema_for;
 use tokio::sync::mpsc::Receiver;
 
-use crate::planner::Plan;
+use crate::agents::planner::Plan;
+
 
 pub async fn create_replanner_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_client_config();

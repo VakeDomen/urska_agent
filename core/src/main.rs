@@ -1,28 +1,22 @@
-use std::{fmt::format, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
+use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
-use reagent_rs::{init_default_tracing, Agent, AgentBuilder, McpServerType};
+use reagent_rs::{init_default_tracing, Agent};
 use rmcp::{
-    handler::server::tool::{Parameters, ToolCallContext, ToolRouter}, model::{CallToolRequestParam, CallToolResult, CancelledNotification, CancelledNotificationMethod, CancelledNotificationParam, Content, Extensions, InitializeRequestParam, InitializeResult, Meta, Notification, NumberOrString, ProgressNotification, ProgressNotificationMethod, ProgressNotificationParam, ProgressToken, Request, ServerCapabilities, ServerInfo, ServerNotification}, schemars, service::{NotificationContext, RequestContext}, tool, tool_handler, tool_router, transport::{common::server_side_http::session_id}, Peer, RoleServer, ServerHandler
+    handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, 
+    schemars, tool, tool_handler, tool_router, Peer, RoleServer, ServerHandler
 };
 use anyhow::Result;
-use serde::{de::IntoDeserializer, Deserialize};
+use serde::Deserialize;
 use tokio::sync::Mutex;
 
 use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
 
-use crate::{urska_v2::{build_urska_v2}, usrka::build_urska};
+use crate::agents::urska_v2::build_urska_v2;
 
-mod usrka;
-mod executor;
-mod replanner;
-mod blueprint;
-mod planner;
-mod prompt_reconstuct;
-mod quick_responder;
-mod function_filter;
-mod urska_v2;
+
+pub mod agents;
 
 const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";
 const MEMORY_URL: &str = "http://localhost:8002/mcp";
@@ -37,28 +31,6 @@ const BIND_ADDRESS: &str = "127.0.0.1:8004";
 #[tokio::main]
 async fn main() -> Result<()> {
     init_default_tracing();
-
-    // The system prompt defines Urška's role as a router.
-    let agent_system_prompt = r#"
-You are **Urška**, a helpful, knowledgeable, and reliable assistant for the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
-
-1. LANGUAGE  
-• Detect whether the user writes in **Slovenian** or **English**. Always respond in the same language.
-
-2. ANSWER FORMATTING
-• Use Markdown for clear presentation (lists, tables).
-• Always specify the programme level in your answer (e.g., "The undergraduate programme in Mathematics...").
-• Do not use 'etc.'; provide the full answer.
-• If the tool provides a source URL, always include it in your response.
-
-
-"#;
-
-
-        
-    // --- Agent Definition ---
-    
-    
 
 
     let agent = build_urska_v2().await?;
