@@ -66,6 +66,11 @@ pub async fn ws_index(
     )
 }
 
+
+#[derive(Message)]
+#[rtype(result = "()")]
+struct Authenticated(Profile);
+
 #[derive(Debug)]
 pub struct ChatSession {
     mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
@@ -74,6 +79,13 @@ pub struct ChatSession {
     authenticated_as: Option<Profile>,
 }
 
+impl Handler<Authenticated> for ChatSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: Authenticated, _: &mut Self::Context) {
+        self.authenticated_as = Some(msg.0);
+    }
+}
 
 
 impl Actor for ChatSession {
@@ -96,16 +108,12 @@ impl Actor for ChatSession {
                 .recv()
                 .await 
             {
-                // here you own `addr` and can use it
                 let text = notification_params
                     .message
                     .clone()
                     .unwrap_or_else(|| "▱".to_string());
-                let json = serde_json::to_string(&BackendMessage::Notification(text))
-                    .unwrap();
-
-                // 4) send it back into the actor
-                addr.do_send(SendWsText(json));
+                let msg = BackendMessage::Notification(text);
+                let _ = addr.send_message_to_client(msg);
             }
         });
     }
@@ -183,6 +191,18 @@ impl ChatSession {
             };
 
             println!("RESP: {:#?}", resp);
+
+            let profile = match Profile::try_from_employee_string(resp) {
+                Ok(p) => p,
+                Err(e) => {
+                    let end = BackendMessage::Error(format!("LDAP profile parsing: {}", e));
+                    let _ = addr.send_message_to_client(end);
+                    return;
+                },
+            };
+
+            let _  = addr.send_message_to_client(BackendMessage::LoginProfile(profile.clone()));
+            addr.do_send(Authenticated(profile));
         });
     }
 
@@ -202,8 +222,8 @@ impl ChatSession {
             return;
         };
 
-
         println!("{:#?}", credentials);
+
         actix::spawn(async move {
 
             let resp = match stdent_ldap_login(credentials.username, credentials.password).await {
@@ -224,6 +244,18 @@ impl ChatSession {
             };
 
             println!("RESP: {:#?}", resp);
+
+            let profile = match Profile::try_from_student_string(resp) {
+                Ok(p) => p,
+                Err(e) => {
+                    let end = BackendMessage::Error(format!("LDAP profile parsing: {}", e));
+                    let _ = addr.send_message_to_client(end);
+                    return;
+                },
+            };
+
+            let _  = addr.send_message_to_client(BackendMessage::LoginProfile(profile.clone()));
+            addr.do_send(Authenticated(profile));
         });
     }
 
@@ -237,6 +269,10 @@ impl ChatSession {
         let addr = ctx.address();
         let queue = self.queue.clone();
         
+        if self.authenticated_as.is_none() {
+            let _ = addr.send_message_to_client(BackendMessage::Error("Not logged in...".into()));
+            return;
+        }
         
         
         actix::spawn(async move {

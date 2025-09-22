@@ -53,7 +53,6 @@ impl Handler<SendWsText> for ChatSession {
     }
 }
 
-
 pub trait SendMessage {
     fn send_message_to_client(&self, end: BackendMessage) -> Result<(), serde_json::Error>;
 }
