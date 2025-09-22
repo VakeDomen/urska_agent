@@ -50,7 +50,7 @@ impl Profile {
             };
         
         Ok(Self { 
-            role: ProfileRole::Student, 
+            role: ProfileRole::Employee, 
             username: username.into() 
         })
     }

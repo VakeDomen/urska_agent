@@ -372,10 +372,7 @@ pub fn history_to_prompt(history: &Vec<Message>) -> String {
         match msg.role {
             Role::User => prompt.push_str(&format!("USER ASKED: {}\n\n", content)),
             Role::Assistant => prompt.push_str(&format!("ASSISTANT: {}\n\n", content)),
-            Role::Tool => {
-                        let tool_name = msg.tool_call_id.as_deref().unwrap_or("unknown_tool");
-                        prompt.push_str(&format!("TOOL `{:?}` RETURNED:\n{}\n\n", tool_name, content));
-                    }
+            Role::Tool => continue,
             Role::System => continue,
             Role::Developer => continue,
         }

@@ -1,13 +1,15 @@
-use std::{collections::HashMap, mem};
+use std::collections::HashMap;
 
 use futures::future::join_all;
-use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification, NotificationContent, StatelessPrebuild, Template, ToolCall, ToolCallFunction, ToolExecutionError, ToolType};
-use schemars::{schema::Schema, schema_for, JsonSchema};
-use serde::Serialize;
+use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, NotificationContent, Template, ToolCall, ToolCallFunction, ToolType};
 use serde_json::{json, to_value};
-use tokio::sync::mpsc::Receiver;
 
-use crate::{function_filter::{build_function_filter_agent, Requirement}, prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}, *};
+use crate::{
+    function_filter::{build_function_filter_agent, Requirement}, 
+    prompt_reconstuct::create_prompt_restructor_agent, 
+    usrka::{history_to_prompt, UrskaNotification},
+    *
+};
 
 
 
@@ -283,8 +285,9 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 
     AgentBuilder::default()
         .set_name("Urška")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
-        .set_base_url("http://hivecore.famnit.upr.si:6666")
+        // .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_model("qwen3:30b")
+        // .set_base_url("http://hivecore.famnit.upr.si:6666")
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         // .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))
@@ -300,6 +303,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .set_min_p(0.0)
         .set_presence_penalty(0.1)
         .set_stream(true)
+        .strip_thinking(true)
         .build()
         .await
 }

@@ -40,28 +40,28 @@ Examples:
 History:
 - User: Can you review the draft I uploaded yesterday?
 - Assistant: Yes, I reviewed “Thesis_Proposal_v3.pdf”.
-Question:
+Prompt:
 - Is the abstract fine?
 Rewrite:
 - Is the abstract in “Thesis_Proposal_v3.pdf” fine?
 
 History:
 - User: Let’s use the smaller model. Llama-3.1-8B-Instruct on our A100 box with temperature 0.2.
-Question:
+Prompt:
 - Bump it to 0.4 and rerun?
 Rewrite:
 - Bump the temperature to 0.4 and rerun Llama-3.1-8B-Instruct on the A100 machine.
 
 History:
 - User: I shared two links: the course page and the UP FAMNIT rules PDF.
-Question:
+Prompt:
 - What does section II say?
 Rewrite:
 - What does section II in the UP FAMNIT rules PDF say?
 
 History:
 - The history talks about user beinig caught cheating in exam.
-Question:
+Prompt:
 - Can I see any rules about this?
 Rewrite:
 - Where can I find rules and acts regarding disciplinary actions?
@@ -70,10 +70,10 @@ Rewrite:
 History:
 - User: Doea famnit offer any scholarships for PhD students? 
 - Asistant: The co-funding of doctoral studies is available to eligible PhD candidates across all FAMNIT programmes, including Mathematical Sciences and Computer Science. This funding helps cover tuition fees and is governed by the Decree on Co-Financing of Doctoral Studies and the Criteria for the Selection of Candidates for Co-Funding Tuition Fees in Doctoral Studies at the University of Primorska 1. Eligibility is based on academic merit and adherence to formal criteria, with selection conducted by the FAMNIT Study Committee. Additionally, a scholarship for nationals of Western Balkan states is available for postgraduate studies, including doctoral programmes. This scholarship provides 8,40 EUR per academic year (70 EUR monthly) to students from Bosnia and Herzegovina, Montenegro, Kosovo, North Macedonia, and Serbia 1. However, the Open Call for the 2020/2021 academic year was not published, indicating that availability may be intermittent or subject to annual funding decisions.
-Question:
+Prompt:
 - Really? 8€?
 Rewrite:
-- Really? Is the scholarship for nationals of Western Balkan states only 8,40 EUR per month?
+- Is the scholarship for nationals of Western Balkan states really only 8,40 EUR per month?
     "#;
 
     let template = Template::simple(r#"
@@ -81,9 +81,13 @@ Rewrite:
 
     {{history}}
 
-    Users task to create a blueprint for: 
+    ---
+
+    # Rephrase the prompt: 
 
     {{prompt}}
+
+    Answer with the rephrased propmp
     "#);
 
     StatelessPrebuild::reply_without_tools()
@@ -96,6 +100,7 @@ Rewrite:
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_clear_history_on_invocation(true)
+        .strip_thinking(true)
         .build_with_notification()
         .await
 }

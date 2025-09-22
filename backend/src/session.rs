@@ -12,7 +12,10 @@ use rmcp::{
 use serde_json::{Map, Value};
 use tokio::sync::{mpsc::{self, Receiver}, Mutex};
 use crate::{
-    ldap::{employee_ldap_login, stdent_ldap_login}, messages::{BackendMessage, FrontendMessage, LoginCredentials, MessageType, SendMessage, SendWsText}, profile::Profile, queue::{self, QueueManager, QueueMessage}
+    ldap::{employee_ldap_login, stdent_ldap_login}, 
+    messages::{BackendMessage, FrontendMessage, LoginCredentials, MessageType, SendMessage}, 
+    profile::Profile, 
+    queue::{self, QueueManager, QueueMessage}
 };
 #[derive(Debug)]
 struct ProgressHandler {
@@ -176,7 +179,7 @@ impl ChatSession {
             let resp = match employee_ldap_login(credentials.username, credentials.password).await {
                 Ok(r) => r,
                 Err(e) =>  {
-                    let end = BackendMessage::Error(format!("LDAP failed: {:#?}", e));
+                    let end = BackendMessage::Error(format!("Auth connection failed: {:#?}", e));
                     let _ = addr.send_message_to_client(end);
                     return;
                 },
@@ -185,7 +188,7 @@ impl ChatSession {
             println!("Checking credential validity");
 
             let Some(resp) = resp else {
-                let end = BackendMessage::Error(format!("LDAP invalid credentials"));
+                let end = BackendMessage::Error(format!("Invalid credentials"));
                 let _ = addr.send_message_to_client(end);
                 return;
             };
@@ -195,7 +198,7 @@ impl ChatSession {
             let profile = match Profile::try_from_employee_string(resp) {
                 Ok(p) => p,
                 Err(e) => {
-                    let end = BackendMessage::Error(format!("LDAP profile parsing: {}", e));
+                    let end = BackendMessage::Error(format!("Profile parsing: {}", e));
                     let _ = addr.send_message_to_client(end);
                     return;
                 },
