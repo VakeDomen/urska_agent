@@ -5,33 +5,54 @@
        }">
     <div class="message-row">
 
-      <div *ngIf="msg.role === 'assistant'" class="message-bubble">
+      @if (msg.role === 'assistant') {
+      <div class="message-bubble">
         @if(queuePosition > 0) {
+        <div>
+          Urška is busy, waiting for my turn (Queue position {{ queuePosition }})
+        </div>
+        }
+
+        @if (msg.error) {
           <div>
-            Server is busy, waiting for my turn (Queue position {{ queuePosition }})
-          </div>
-        } 
-
-
-        <div *ngIf="!msg.content && stateMessage" class="thinking-box">
-          <h4 class="thinking-header"><span *ngIf="!msg.content" class="loader"></span> 🤔 Thinking...</h4>
+          <h4 class="thinking-header">
+            😞 Something went wrong...
+          </h4>
           <div class="thinking-content" #scrollContainerThink>
-            {{ stateMessage }}
+            {{ msg.error }}
           </div>
         </div>
-        <div class="thinking-box" [@collapse]="isThinking(msg)">
+        }
+
+        @if (!msg.content && msg.state) {
+        <div>
+          <h4 class="thinking-header">
+            <span class="loader"></span>
+            🤔 Thinking...
+          </h4>
+          <div class="thinking-content" #scrollContainerThink>
+            {{ msg.state }}
+          </div>
+        </div>
+        }
+        <div [@collapse]="isThinking(msg)">
           <h4 class="thinking-header">🤔 Thinking...</h4>
           <div class="thinking-content" #scrollContainerThink>
             {{ getThinkingContent(msg) }}
           </div>
         </div>
 
-        <markdown *ngIf="shouldRenderFinalContent(msg)" [data]="getFinalContent(msg)"></markdown>
+        @if (shouldRenderFinalContent(msg)) {
+        <markdown [data]="getFinalContent(msg)"></markdown>
+        }
       </div>
+      }
 
-      <div *ngIf="msg.role === 'user'" class="message-bubble">
+      @if (msg.role === 'user') {
+      <div class="message-bubble">
         {{ msg.content }}
       </div>
+      }
 
     </div>
   </div>

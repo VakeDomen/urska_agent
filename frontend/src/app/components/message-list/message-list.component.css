@@ -99,7 +99,7 @@
   padding: 6px 12px;
   margin: 0;
   border-bottom: 1px solid #d1d5db;
-  background-color: #f3f4f6;
+  /* background-color: #f3f4f6; */
 }
 
 /* The area where thinking tokens are streamed */

@@ -3,9 +3,11 @@ import { CommonModule } from '@angular/common';
 import { MessageListComponent } from '../message-list/message-list.component';
 import { ChatInputComponent } from '../chat-input/chat-input.component';
 import { SidePanelComponent } from '../side-panel/side-panel.component';
-import { Message } from '../../models/message.model';
+import { CountedError, CountedToken, Message } from '../../models/message.model';
 import { Notification, BackendNotification } from '../../models/notification.model';
 import { StateService } from '../../state/state.service';
+import { UserProfile } from '../../models/profile.model';
+import { LoginModalComponent } from "../login/login.component";
 
 @Component({
   selector: 'app-chat',
@@ -15,7 +17,8 @@ import { StateService } from '../../state/state.service';
     MessageListComponent,
     ChatInputComponent,
     SidePanelComponent,
-  ],
+    LoginModalComponent
+],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,21 +28,24 @@ export class ChatComponent implements OnInit {
   public notifications: Notification[] = [];
   public resultNotifications: Notification[] = [];
   public stateMessage: String | undefined;
+  public errorMessage: CountedError | undefined;
   public queuePosition: number = 0;
-  public lastToken: String | undefined;
+  public lastToken: CountedToken | undefined;
   public leftSideOpen = true;
   public rightSideOpen = true;
   public displayAdvanced = false;
   public isProcessing = false;
-  private socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
+  public isLoggedIn = false;
+  public socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
   public socketStatus: 'connecting' | 'open' | 'closed' = 'connecting';
+  public tokenCount: number = 0;
 
   constructor(
     private cdr: ChangeDetectorRef,
   ) { 
     effect(() => {
       this.displayAdvanced = (StateService.displayType() == 'advanced')
-      console.log("Heelllooo", StateService.displayType())
+      this.isLoggedIn = !!StateService.userProfile(); 
       this.cdr.detectChanges();
     });
   }
@@ -48,7 +54,6 @@ export class ChatComponent implements OnInit {
     this.socket.onopen = () => {
       this.socketStatus = 'open';
       this.cdr.detectChanges();
-      console.log("OPEN")
     };
 
     this.socket.onclose = () => {
@@ -64,6 +69,14 @@ export class ChatComponent implements OnInit {
     this.socket.onmessage = (ev: MessageEvent) => {
       const msg = JSON.parse(ev.data);
 
+      if (msg.type === 'Error') {
+        this.handleErrorMessage(msg);
+      }
+
+      if (msg.type === 'LoginProfile') {
+        this.handleLoginProfileMessage(msg)
+      }
+
       if (msg.type === "QueuePosition") {
         this.handleQueuePositionMessage(msg);
       }
@@ -77,7 +90,6 @@ export class ChatComponent implements OnInit {
     };
   }
   handleNotificationMessage(msg: any) {
-    // we seem to be no longer in queue
     this.queuePosition = 0;
 
     const backendNotification = JSON.parse(msg.data) as BackendNotification;
@@ -85,7 +97,11 @@ export class ChatComponent implements OnInit {
       backendNotification.agent === 'Urška' &&
       'Token' in backendNotification.content
     ) {
-      this.lastToken = backendNotification.content.Token.value;
+      this.lastToken = {
+        value: backendNotification.content.Token.value,
+        seq: this.tokenCount++
+      } as CountedToken;
+      
       this.cdr.detectChanges();
       return
     }
@@ -144,19 +160,26 @@ export class ChatComponent implements OnInit {
       role: 'user',
       content: prompt,
       timestamp: new Date(),
+      error: undefined,
+      state: undefined,
     });
 
     this.messages.push({
       role: 'assistant',
       content: "",
       timestamp: new Date(),
+      error: undefined,
+      state: undefined
     })
 
     this.notifications = [];
     this.isProcessing = true;
     this.rightSideOpen = true;
 
-    this.socket.send(JSON.stringify({ question: prompt }));
+    this.socket.send(JSON.stringify({ 
+      message_type: "Prompt",
+      content: prompt 
+    }));
   }
 
   handleRightPanelEnter() {
@@ -182,5 +205,18 @@ export class ChatComponent implements OnInit {
 
   handleQueuePositionMessage(msg: any) {
     this.queuePosition = +msg.data;
+  }
+
+
+  handleErrorMessage(msg: any) {
+    this.errorMessage = {
+      seq: this.tokenCount++,
+      value: msg.data
+    } as CountedError;
+    this.isProcessing = false;
+  }
+
+  handleLoginProfileMessage(data: UserProfile) {
+    StateService.userProfile.set(data);
   }
 }

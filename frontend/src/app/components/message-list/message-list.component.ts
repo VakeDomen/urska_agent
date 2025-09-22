@@ -1,7 +1,7 @@
 import { Component, ElementRef, Input, OnChanges, SecurityContext, SimpleChanges, ViewChild } from '@angular/core'
 import { CommonModule } from '@angular/common'
 import { trigger, style, transition, animate, state } from '@angular/animations'
-import { Message } from '../../models/message.model'
+import { CountedError, CountedToken, Message } from '../../models/message.model'
 import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown';
 
 @Component({
@@ -32,8 +32,9 @@ import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown'
 export class MessageListComponent implements OnChanges {
 
   @Input() messages: Message[] = []
-  @Input() newToken: String | undefined;
+  @Input() newToken: CountedToken | undefined;
   @Input() stateMessage: String | undefined;
+  @Input() errorMessage: CountedError | undefined;
   @Input() queuePosition: number = 0;
 
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
@@ -42,11 +43,23 @@ export class MessageListComponent implements OnChanges {
   lastMessageLenToBottom: number = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
-    // Append the new token to the content of the last message
+    // new state
+    if (changes['stateMessage'] && this.messages.length > 0) {
+      const value = changes['stateMessage'].currentValue;
+      this.messages[this.messages.length - 1].state = value;
+    }
+    
+    // new error
+    if (changes['errorMessage'] && this.messages.length > 0) {
+      const value = changes['errorMessage'].currentValue.value;
+      this.messages[this.messages.length - 1].error = value;
+      console.log(this.messages[this.messages.length - 1].error)
+    }
+
+    // new token
     if (changes['newToken'] && this.messages.length > 0) {
-      const token = changes['newToken'].currentValue;
+      const token = changes['newToken'].currentValue.value;
       if (token) {
-        // We assume the stream always targets the last message
         this.messages[this.messages.length - 1].content += token;
         this.scrollChatToBottom();
         this.scrollThinkToBottom();

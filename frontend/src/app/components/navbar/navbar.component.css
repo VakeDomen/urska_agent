@@ -10,6 +10,12 @@
   height: 35px;
 }
 
+.brand-icon {
+  width: 25px;
+  height: 25px;
+  text-shadow: lightgray 0px 0px 5px; 
+}
+
 /* Left and right sections */
 .navbar-left,
 .navbar-right {
@@ -24,7 +30,8 @@
   align-items: center;
   gap: 0.5rem;
   text-decoration: none;
-  color: #ffc445; /* A university-like dark blue */
+  color: black; /* A university-like dark blue */
+  /* text-shadow: #ffc445 0px 0px 5px; */
 }
 
 .logo-placeholder {
@@ -65,7 +72,7 @@
 
 .auth-button {
   background-color: #ffc445; /* A complementary blue */
-  color: white;
+  color: black;
 }
 
 .auth-button:hover {
