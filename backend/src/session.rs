@@ -1,5 +1,4 @@
-use std::{clone, sync::Arc};
-
+use std::sync::Arc;
 use actix::prelude::*;
 use actix_web::{Error, HttpRequest, HttpResponse, web};
 use actix_web_actors::ws;
@@ -7,31 +6,14 @@ use rmcp::{
     model::{CallToolRequestParam, ProgressNotificationParam},
     service::RunningService,
     transport::StreamableHttpClientTransport,
-    ClientHandler,                     // trait
-    ServiceExt,                        // for .serve()
+    ClientHandler,                     
+    ServiceExt,                        
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::sync::{mpsc::{self, Receiver}, Mutex};
-
-// -- messages exchanged with the front end --
-
-#[derive(Deserialize)]
-struct FrontendMessage {
-    question: String,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "type", content = "data")]
-enum BackendMessage {
-    Chunk(String),
-    Notification(String),
-    QueuePosition(PositionInQueue),
-    End,
-}
-
-// -- our MCP progress‐notification handler --
-
+use crate::{
+    ldap::{employee_ldap_login, stdent_ldap_login}, messages::{BackendMessage, FrontendMessage, LoginCredentials, MessageType, SendMessage, SendWsText}, profile::Profile, queue::{self, QueueManager, QueueMessage}
+};
 #[derive(Debug)]
 struct ProgressHandler {
     notification_tx: mpsc::Sender<ProgressNotificationParam>,
@@ -46,8 +28,6 @@ impl ClientHandler for ProgressHandler {
         let _ = self.notification_tx.send(params).await;
     }
 }
-
-// -- the Actix‐Web entry point for WebSocket upgrade --
 
 pub async fn ws_index(
     req: HttpRequest,
@@ -72,48 +52,29 @@ pub async fn ws_index(
         })?;
 
     let queue = queue.get_ref().clone();
+    let authenticated_as = None;
     // 3) hand off to our ChatSession actor
     ws::start(
         ChatSession {
             mcp_client: client,
             notification_reciever: Arc::new(Mutex::new(notif_rx)),
             queue,
+            authenticated_as,
         },
         &req,
         stream,
     )
 }
 
-// -- the per‐WebSocket actor that ties everything together --
-
 #[derive(Debug)]
-struct ChatSession {
+pub struct ChatSession {
     mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
     notification_reciever: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
-    queue: Arc<Mutex<QueueManager>>
+    queue: Arc<Mutex<QueueManager>>,
+    authenticated_as: Option<Profile>,
 }
 
-// at top of session.rs, add:
-use actix::Message;
 
-use crate::queue::{self, PositionInQueue, QueueManager, QueueMessage};
-
-// define an internal actor‐message for sending WS text
-struct SendWsText(pub String);
-impl Message for SendWsText {
-    type Result = ();
-}
-
-// in ChatSession, add the handler:
-impl Handler<SendWsText> for ChatSession {
-    type Result = ();
-
-    fn handle(&mut self, msg: SendWsText, ctx: &mut Self::Context) {
-        ctx.text(msg.0);
-    }
-}
-
-// then replace your `started` impl with:
 
 impl Actor for ChatSession {
     type Context = ws::WebsocketContext<Self>;
@@ -157,13 +118,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ChatSession {
         item: Result<ws::Message, ws::ProtocolError>,
         ctx: &mut Self::Context,
     ) {
-        // println!("New message: {:#?}", item);
         match item {
             Ok(ws::Message::Text(txt)) => {
-                // parse the prompt request
                 if let Ok(req) = serde_json::from_str::<FrontendMessage>(&txt) {
                     self.handle_message_from_client(ctx, req);
-                    
                 }
             }
             Ok(ws::Message::Ping(p)) => ctx.pong(&p),
@@ -182,8 +140,99 @@ impl ChatSession {
         ctx: &mut ws::WebsocketContext<ChatSession>,
         message: FrontendMessage,
     ) {
+        match &message.message_type {
+            MessageType::Prompt => self.prompt(ctx, message.content),
+            MessageType::EmployeeLogin => self.employee_login(ctx, message.content),
+            MessageType::StudentLogin => self.student_login(ctx, message.content),
+        }
+    }
 
-        println!("Message");
+    fn employee_login(
+        &mut self, 
+        ctx: &mut ws::WebsocketContext<ChatSession>,
+        message: String,
+    ) {
+        println!("Employee Login");
+        let addr: Addr<ChatSession> = ctx.address();
+        
+        let Ok(credentials) = serde_json::from_str::<LoginCredentials>(&message) else {
+            let end = BackendMessage::Error("Invalid credentials shape".into());
+            let _ = addr.send_message_to_client(end);
+            return;
+        };
+
+        println!("{:#?}", credentials);
+
+        actix::spawn(async move {
+
+            let resp = match employee_ldap_login(credentials.username, credentials.password).await {
+                Ok(r) => r,
+                Err(e) =>  {
+                    let end = BackendMessage::Error(format!("LDAP failed: {:#?}", e));
+                    let _ = addr.send_message_to_client(end);
+                    return;
+                },
+            };
+            
+            println!("Checking credential validity");
+
+            let Some(resp) = resp else {
+                let end = BackendMessage::Error(format!("LDAP invalid credentials"));
+                let _ = addr.send_message_to_client(end);
+                return;
+            };
+
+            println!("RESP: {:#?}", resp);
+        });
+    }
+
+
+
+    fn student_login(
+        &mut self, 
+        ctx: &mut ws::WebsocketContext<ChatSession>,
+        message: String,
+    ) {
+        println!("Student Login");
+        let addr = ctx.address();
+        
+        let Ok(credentials) = serde_json::from_str::<LoginCredentials>(&message) else {
+            let end = BackendMessage::Error("Invalid credentials shape".into());
+            let _ = addr.send_message_to_client(end);
+            return;
+        };
+
+
+        println!("{:#?}", credentials);
+        actix::spawn(async move {
+
+            let resp = match stdent_ldap_login(credentials.username, credentials.password).await {
+                Ok(r) => r,
+                Err(e) =>  {
+                    let end = BackendMessage::Error(format!("LDAP failed: {:#?}", e));
+                    let _ = addr.send_message_to_client(end);
+                    return;
+                },
+            };
+
+            println!("Checking credential validity");
+            
+            let Some(resp) = resp else {
+                let end = BackendMessage::Error(format!("LDAP invalid credentials"));
+                let _ = addr.send_message_to_client(end);
+                return;
+            };
+
+            println!("RESP: {:#?}", resp);
+        });
+    }
+
+    fn prompt(
+        &mut self, 
+        ctx: &mut ws::WebsocketContext<ChatSession>,
+        message: String,
+    ) {
+        println!("Prompt");
         let client = self.mcp_client.clone();
         let addr = ctx.address();
         let queue = self.queue.clone();
@@ -191,7 +240,7 @@ impl ChatSession {
         
         
         actix::spawn(async move {
-
+        
             let mut job_id: Option<uuid::Uuid> = None;
             
             let mut reciever: Receiver<QueueMessage> = {
@@ -201,7 +250,7 @@ impl ChatSession {
                     .enter_queue()
                     .await
             };    
-
+        
             {
                 while let Some(message) = reciever
                     .recv()
@@ -214,50 +263,42 @@ impl ChatSession {
                         },
                         queue::QueueMessage::PositionUpade(position) => {
                             let end = BackendMessage::QueuePosition(position);
-                            let content = serde_json::to_string(&end).unwrap();
-                            let message = SendWsText(content);
-                            if let Err(e) = addr.try_send(message) {
-                                println!("Something went wrong: {:#?}", e)
-                            } 
+                            let _ = addr.send_message_to_client(end);
                             continue;
                         },
                     };
-                    
+            
                 }
             }
-
+        
             let mut urska_argument_map = Map::new();
-
+        
             urska_argument_map.insert(
                 "question".to_string(), 
-                Value::String(message.question.clone())
+                Value::String(message.clone())
             );
-                
-
+        
+        
             let fn_call_request = CallToolRequestParam {
                 name: "ask_urska".into(),
                 arguments: Some(urska_argument_map),
             };
-
+        
             
             let result = client
                 .call_tool(fn_call_request)
                 .await;
-
+        
             
             if let Err(e) = &result {
                 let error_conetent = format!("[Tool error] {}",e);
                 let err_msg = BackendMessage::Chunk(error_conetent);
-                let content = serde_json::to_string(&err_msg).unwrap();
-                let message = SendWsText(content);
-                let _ = addr.do_send(message);
+                let _ = addr.send_message_to_client(err_msg);
             }
-
+        
             // once done, send the End marker
             let end = BackendMessage::End;
-            let content = serde_json::to_string(&end).unwrap();
-            let message = SendWsText(content);
-            addr.do_send(message);
+            let _ = addr.send_message_to_client(end);
             
             queue
                 .clone()
@@ -265,7 +306,8 @@ impl ChatSession {
                 .await
                 .notify_done(job_id.unwrap())
                 .await;
-
+        
         });
     }
 }
+

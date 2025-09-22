@@ -1,14 +1,15 @@
 use std::sync::Arc;
-
-use actix::Actor;
 use actix_web::{web, App, HttpServer};
 use tokio::sync::Mutex;
 mod session;
 mod queue;
+mod ldap;
+mod profile;
+mod messages;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-
+    let _  = dotenv::dotenv();
     let queue_addr = Arc::new(Mutex::new(queue::QueueManager::new()));
 
     println!("Starting Urska proxy on http://127.0.0.1:8080/ws");
