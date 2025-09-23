@@ -13,7 +13,7 @@ use rmcp::transport::streamable_http_server::{
     StreamableHttpService, session::local::LocalSessionManager,
 };
 
-use crate::agents::urska_v2::build_urska_v2;
+use crate::agents::urska_v2::{build_urska_v2, get_display_conversation};
 
 
 pub mod agents;
@@ -129,9 +129,21 @@ impl Service {
         let resp = agent.invoke_flow(question.question.clone()).await;
         let file_name = format!("{}_conversation.json", self.id);
         let _ = agent.save_history(file_name);
-        println!("Time to answe query: {:?} | {}", start.elapsed(), question.question);
+        println!("Time to answer query: {:?} | {}", start.elapsed(), question.question);
         Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }
+
+
+    #[tool(description = "Export conversation")]
+    pub async fn export_conversation(
+        &self, 
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let agent = self.agent.lock().await;
+        let conversation = get_display_conversation(&agent);
+        let resp = serde_json::to_string(&conversation);
+        Ok(CallToolResult::success(vec![Content::text(resp.unwrap())]))
+    }
+
 }
 
 #[tool_handler]

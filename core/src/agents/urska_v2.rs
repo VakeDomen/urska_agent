@@ -1,16 +1,25 @@
 use std::collections::HashMap;
 
 use futures::future::join_all;
-use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, NotificationContent, Template, ToolCall, ToolCallFunction, ToolType};
+use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification, NotificationContent, Template, ToolCall, ToolCallFunction, ToolType};
 use serde_json::{json, to_value};
 
 use crate::{
     agents::{function_filter::{build_function_filter_agent, Requirement}, prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}}, *
 };
 
+
+#[derive(Debug, Clone)]
+pub struct Conversation {
+    invocations: Vec<Message>
+}
+
+
 async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
     
     send_notifcation(urska, "Preparing...").await;
+    let mut conversation = get_display_conversation(&urska);
+    conversation.push(Message::user(prompt.clone()));
 
     let (function_filter_agent, filter_notification_channel) = build_function_filter_agent(urska).await?;
     let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&urska).await?;
@@ -146,6 +155,8 @@ Given the above context respond to the following user query:
     urska.history.push(Message::user(final_prompt));
     let out = invoke_without_tools(urska).await?.message;
     urska.notify(reagent_rs::NotificationContent::Done(true, out.content.clone())).await;
+    conversation.push(out.clone());
+    store_display_conversation(urska, conversation);
     Ok(out)
 }
 
@@ -315,4 +326,19 @@ async fn send_notifcation<T>(agent: &mut Agent, message: T) where T: Into<String
     agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
         message: message.into()
     }).unwrap())).await;
+}
+
+pub fn get_display_conversation(agent: &Agent) -> Vec<Message> {
+    match agent.state.get("display_conversation") {
+        Some(c) => serde_json::from_value(c.clone()).unwrap_or_default(),
+        None => vec![],
+    }
+}
+
+pub fn store_display_conversation(agent: &mut Agent, conversation: Vec<Message>) {
+    let Ok(val) = serde_json::to_value(conversation) else {
+        return
+    };
+
+    agent.state.insert("display_conversation".into(), val);
 }
