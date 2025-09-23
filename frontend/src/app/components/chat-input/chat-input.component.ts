@@ -10,7 +10,7 @@ import { FormsModule } from '@angular/forms'
   styleUrls: ['./chat-input.component.css']
 })
 export class ChatInputComponent {
-  text = 'Doea famnit offer any scholarships for PhD students?'
+  text = 'how much time does the professor have to encode my grade?'
   @Output() send = new EventEmitter<string>();
   @Input() connectionStatus: 'connecting' | 'open' | 'closed' = 'closed';
 

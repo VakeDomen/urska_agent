@@ -45,6 +45,20 @@
         @if (shouldRenderFinalContent(msg)) {
         <markdown [data]="getFinalContent(msg)"></markdown>
         }
+
+
+
+        @if (msg.done) {
+          <div class="actions">
+            <i class="far fa-thumbs-up"></i>
+            <i class="far fa-thumbs-down"></i>
+            <i class="fas fa-clone" (click)="copyToClipboard(msg)"></i>
+
+            <span class="time">
+              {{ calcTookTime(msg) }}
+            </span>
+          </div>
+        }
       </div>
       }
 

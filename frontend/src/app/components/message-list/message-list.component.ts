@@ -31,6 +31,7 @@ import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown'
 })
 export class MessageListComponent implements OnChanges {
 
+
   @Input() messages: Message[] = []
   @Input() newToken: CountedToken | undefined;
   @Input() stateMessage: String | undefined;
@@ -48,7 +49,7 @@ export class MessageListComponent implements OnChanges {
       const value = changes['stateMessage'].currentValue;
       this.messages[this.messages.length - 1].state = value;
     }
-    
+
     // new error
     if (changes['errorMessage'] && this.messages.length > 0) {
       const value = changes['errorMessage'].currentValue.value;
@@ -57,9 +58,15 @@ export class MessageListComponent implements OnChanges {
 
     // new token
     if (changes['newToken'] && this.messages.length > 0) {
-      const token = changes['newToken'].currentValue.value;
-      if (token) {
-        this.messages[this.messages.length - 1].content += token;
+      const token = changes['newToken'].currentValue;
+
+      if (token.seq == -1) {
+        this.messages[this.messages.length - 1].done = new Date();
+      }
+
+
+      if (token.value && token.seq > -1) {
+        this.messages[this.messages.length - 1].content += token.value;
         this.scrollChatToBottom();
         this.scrollThinkToBottom();
       }
@@ -189,5 +196,24 @@ export class MessageListComponent implements OnChanges {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+
+  calcTookTime(message: Message): string {
+    if (!message.done) {
+      return ""
+    }
+
+    const diff = message.done.getTime() - message.timestamp.getTime()
+    const seconds = (diff / 1000).toFixed(2)
+
+    return `Took: ${seconds}s`
+  }
+
+  copyToClipboard(msg: Message) {
+    navigator.clipboard.writeText(this
+      .getFinalContent(msg)
+      .trim()
+    );
   }
 }

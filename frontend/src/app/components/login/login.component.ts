@@ -20,7 +20,7 @@ export class LoginModalComponent implements OnChanges {
   
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['countedError']) {
+    if (changes['countedError'] && changes['countedError'].currentValue) {
       this.error = changes['countedError'].currentValue.value;
     }
   }

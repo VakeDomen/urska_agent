@@ -134,6 +134,10 @@ export class ChatComponent implements OnInit {
       console.log("Done processing")
       // this.rightSideOpen = false;
       // this.leftSideOpen = false;
+      this.lastToken = {
+        value: "",
+        seq: -1,
+      } as CountedToken;
     } else {
       const arrivalTime = Date.now();
       const lastNotification = this.notifications[this.notifications.length - 1];
@@ -171,6 +175,7 @@ export class ChatComponent implements OnInit {
       timestamp: new Date(),
       error: undefined,
       state: undefined,
+      done: undefined,
     });
 
     this.messages.push({
@@ -178,7 +183,8 @@ export class ChatComponent implements OnInit {
       content: "",
       timestamp: new Date(),
       error: undefined,
-      state: undefined
+      state: undefined,
+      done: undefined
     })
 
     this.notifications = [];

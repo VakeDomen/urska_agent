@@ -140,6 +140,24 @@
   box-sizing: border-box; /* Ensures padding and border are included in the total width/height */
 }
 
+.actions {
+  border-top: 1px solid gray;
+}
+
+.actions i {
+  margin: 7px;
+  cursor: pointer;
+  color: rgb(65, 65, 65);
+}
+
+.actions i:hover {
+  color: #6b7280;
+}
+
+.actions .time {
+  float: right;
+  color: rgb(65, 65, 65);
+}
 
 /* The spinning animation */
 @keyframes spin {

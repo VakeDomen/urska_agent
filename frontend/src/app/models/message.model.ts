@@ -4,6 +4,7 @@ export interface Message {
   timestamp: Date
   state: string | undefined
   error: string | undefined
+  done: Date | undefined, 
 }
 
 export interface CountedToken {
