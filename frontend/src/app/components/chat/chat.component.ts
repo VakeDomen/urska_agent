@@ -45,7 +45,16 @@ export class ChatComponent implements OnInit {
   ) { 
     effect(() => {
       this.displayAdvanced = (StateService.displayType() == 'advanced')
+      const wasLoggedIn = this.isLoggedIn;
       this.isLoggedIn = !!StateService.userProfile(); 
+
+      if (wasLoggedIn && !this.isLoggedIn) {
+        this.socket.send(JSON.stringify({ 
+          message_type: "Logout",
+          content: "" 
+        }));
+      }
+
       this.cdr.detectChanges();
     });
   }

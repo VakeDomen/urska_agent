@@ -6,7 +6,7 @@ import { LoginModalComponent } from "../login/login.component";
 @Component({
   selector: 'app-navbar',
   standalone: true,
-  imports: [CommonModule, LoginModalComponent],
+  imports: [CommonModule],
   templateUrl: './navbar.component.html',
   styleUrl: './navbar.component.css'
 })
@@ -24,7 +24,7 @@ export class NavbarComponent {
 
   toggleLogin(): void {
     if (this.isLoggedIn) {
-      StateService.userProfile.set(null); // Clear the profile to log out
+      StateService.userProfile.set(null);
       console.log(`User is now Logged Out`);
     }
   }

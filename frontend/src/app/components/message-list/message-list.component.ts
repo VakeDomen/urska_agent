@@ -53,7 +53,6 @@ export class MessageListComponent implements OnChanges {
     if (changes['errorMessage'] && this.messages.length > 0) {
       const value = changes['errorMessage'].currentValue.value;
       this.messages[this.messages.length - 1].error = value;
-      console.log(this.messages[this.messages.length - 1].error)
     }
 
     // new token

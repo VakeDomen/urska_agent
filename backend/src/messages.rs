@@ -12,7 +12,8 @@ use crate::{
 pub enum MessageType {
     StudentLogin,
     EmployeeLogin,
-    Prompt
+    Logout,
+    Prompt,
 }
 
 #[derive(Debug, Deserialize)]
@@ -44,7 +45,6 @@ impl Message for SendWsText {
     type Result = ();
 }
 
-// in ChatSession, add the handler:
 impl Handler<SendWsText> for ChatSession {
     type Result = ();
 

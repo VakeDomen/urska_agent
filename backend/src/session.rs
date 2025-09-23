@@ -1,13 +1,10 @@
 use std::sync::Arc;
 use actix::prelude::*;
-use actix_web::{Error, HttpRequest, HttpResponse, web};
 use actix_web_actors::ws;
 use rmcp::{
     model::{CallToolRequestParam, ProgressNotificationParam},
     service::RunningService,
-    transport::StreamableHttpClientTransport,
     ClientHandler,                     
-    ServiceExt,                        
 };
 use serde_json::{Map, Value};
 use tokio::sync::{mpsc::{self, Receiver}, Mutex};
@@ -18,8 +15,8 @@ use crate::{
     queue::{self, QueueManager, QueueMessage}
 };
 #[derive(Debug)]
-struct ProgressHandler {
-    notification_tx: mpsc::Sender<ProgressNotificationParam>,
+pub struct ProgressHandler {
+    pub notification_tx: mpsc::Sender<ProgressNotificationParam>,
 }
 
 impl ClientHandler for ProgressHandler {
@@ -32,54 +29,22 @@ impl ClientHandler for ProgressHandler {
     }
 }
 
-pub async fn ws_index(
-    req: HttpRequest,
-    stream: web::Payload,
-    queue: web::Data<Arc<Mutex<queue::QueueManager>>>,
-) -> Result<HttpResponse, Error> {
-    
-    // 1) channel for progress notifications
-    let (notification_tx, notif_rx) = mpsc::channel::<ProgressNotificationParam>(32);
-
-    // 2) start SSE transport + MCP client with our ProgressHandler
-    let transport = StreamableHttpClientTransport::from_uri("http://localhost:8004/mcp");
-
-
-    let handler = ProgressHandler { notification_tx: notification_tx };
-    let client: RunningService<_, _> = handler
-        .serve(transport)
-        .await
-        .map_err(|e| {
-            eprintln!("Failed to connect MCP client: {}", e);
-            actix_web::error::ErrorInternalServerError("MCP connect error")
-        })?;
-
-    let queue = queue.get_ref().clone();
-    let authenticated_as = None;
-    // 3) hand off to our ChatSession actor
-    ws::start(
-        ChatSession {
-            mcp_client: client,
-            notification_reciever: Arc::new(Mutex::new(notif_rx)),
-            queue,
-            authenticated_as,
-        },
-        &req,
-        stream,
-    )
-}
 
 
 #[derive(Message)]
 #[rtype(result = "()")]
 struct Authenticated(Profile);
 
+#[derive(Message)]
+#[rtype(result = "()")]
+struct Logout;
+
 #[derive(Debug)]
 pub struct ChatSession {
-    mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
-    notification_reciever: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
-    queue: Arc<Mutex<QueueManager>>,
-    authenticated_as: Option<Profile>,
+    pub mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
+    pub notification_reciever: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
+    pub queue: Arc<Mutex<QueueManager>>,
+    pub authenticated_as: Option<Profile>,
 }
 
 impl Handler<Authenticated> for ChatSession {
@@ -87,6 +52,15 @@ impl Handler<Authenticated> for ChatSession {
 
     fn handle(&mut self, msg: Authenticated, _: &mut Self::Context) {
         self.authenticated_as = Some(msg.0);
+    }
+}
+
+impl Handler<Logout> for ChatSession {
+    type Result = ();
+
+    fn handle(&mut self, _msg: Logout, _: &mut Self::Context) {
+        self.authenticated_as = None;
+        println!("Logged out...")
     }
 }
 
@@ -155,6 +129,7 @@ impl ChatSession {
             MessageType::Prompt => self.prompt(ctx, message.content),
             MessageType::EmployeeLogin => self.employee_login(ctx, message.content),
             MessageType::StudentLogin => self.student_login(ctx, message.content),
+            MessageType::Logout => self.logout(ctx, message),
         }
     }
 
@@ -347,6 +322,11 @@ impl ChatSession {
                 .await;
         
         });
+    }
+    
+    fn logout(&self, ctx: &mut ws::WebsocketContext<ChatSession>, _: FrontendMessage) {
+        let addr = ctx.address();
+        addr.do_send(Logout);
     }
 }
 
