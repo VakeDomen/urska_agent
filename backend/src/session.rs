@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc};
 use actix::prelude::*;
 use actix_web_actors::ws;
 use rmcp::{
@@ -7,7 +7,7 @@ use rmcp::{
     ClientHandler,                     
 };
 use serde_json::{Map, Value};
-use tokio::sync::{mpsc::{self, Receiver}, Mutex};
+use tokio::{fs, sync::{mpsc::{self, Receiver}, Mutex}};
 use crate::{
     ldap::{employee_ldap_login, stdent_ldap_login}, 
     messages::{BackendMessage, FrontendMessage, LoginCredentials, MessageType, SendMessage}, 
@@ -41,6 +41,7 @@ struct Logout;
 
 #[derive(Debug)]
 pub struct ChatSession {
+    pub id: String,
     pub mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
     pub notification_reciever: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
     pub queue: Arc<Mutex<QueueManager>>,
@@ -130,7 +131,9 @@ impl ChatSession {
             MessageType::EmployeeLogin => self.employee_login(ctx, message.content),
             MessageType::StudentLogin => self.student_login(ctx, message.content),
             MessageType::Logout => self.logout(ctx, message),
-        }
+            MessageType::ThumbsUp => self.save_thumbs_up(ctx, message),
+            MessageType::ThumbsDown => self.save_thumbs_down(ctx, message),
+                    }
     }
 
     fn employee_login(
@@ -327,6 +330,55 @@ impl ChatSession {
     fn logout(&self, ctx: &mut ws::WebsocketContext<ChatSession>, _: FrontendMessage) {
         let addr = ctx.address();
         addr.do_send(Logout);
+    }
+    
+    fn save_thumbs_up(&self, ctx: &mut ws::WebsocketContext<ChatSession>, _message: FrontendMessage) {
+        let client = self.mcp_client.clone();
+        let session_id = self.id.clone();
+    
+        actix::spawn(async move {
+            let fn_call_request = CallToolRequestParam {
+                name: "export_conversation".into(),
+                arguments: None,
+            };
+        
+            let result = client
+                .call_tool(fn_call_request)
+                .await;
+            let binding = result.unwrap().content.clone();
+            let content = &binding[0].as_text().unwrap().text;
+
+            let _ = fs::write(
+                format!("up_{}.json", session_id), 
+                content
+            ).await;
+        
+        });
+    }
+    
+    fn save_thumbs_down(&self, ctx: &mut ws::WebsocketContext<ChatSession>, _message: FrontendMessage) {
+        let client = self.mcp_client.clone();
+        let session_id = self.id.clone();
+    
+        actix::spawn(async move {
+            let fn_call_request = CallToolRequestParam {
+                name: "export_conversation".into(),
+                arguments: None,
+            };
+        
+            let result = client
+                .call_tool(fn_call_request)
+                .await;
+
+            let binding = result.unwrap().content.clone();
+            let content = &binding[0].as_text().unwrap().text;
+
+            let _ = fs::write(
+                format!("down_{}.json", session_id), 
+                content
+            ).await;
+        
+        });
     }
 }
 

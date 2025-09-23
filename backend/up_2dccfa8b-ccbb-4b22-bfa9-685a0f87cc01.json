@@ -1,0 +1,10 @@
+[
+    {
+        "role": "user",
+        "content": "how much time does the professor have to encode my grade?"
+    },
+    {
+        "role": "assistant",
+        "content": "\n\nThe professor is required to enter your grade within **14 days** of the exam date. For example, if the exam was held on **11 July 2022**, grades must be entered by **25 July 2022**. This timeframe ensures timely updates to the SIS system for academic records. If the grade is delayed beyond this period, you may need to follow up directly with the professor or the Student Office."
+    }
+]

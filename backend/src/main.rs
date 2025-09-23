@@ -3,6 +3,7 @@ use actix_web::{Error, web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_web_actors::ws;
 use rmcp::{model::ProgressNotificationParam, service::RunningService, transport::StreamableHttpClientTransport, ServiceExt};
 use tokio::sync::{mpsc, Mutex};
+use uuid::Uuid;
 
 use crate::session::{ChatSession, ProgressHandler};
 mod session;
@@ -57,6 +58,7 @@ pub async fn ws_index(
     // 3) hand off to our ChatSession actor
     ws::start(
         ChatSession {
+            id: Uuid::new_v4().to_string(),
             mcp_client: client,
             notification_reciever: Arc::new(Mutex::new(notif_rx)),
             queue,

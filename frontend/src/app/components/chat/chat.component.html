@@ -24,6 +24,7 @@
         [stateMessage]="stateMessage"
         [errorMessage]="errorMessage"
         [queuePosition]="queuePosition"
+        [socket]="socket"
       ></message-list>
       <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
     </div>

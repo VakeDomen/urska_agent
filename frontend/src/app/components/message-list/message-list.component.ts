@@ -31,12 +31,12 @@ import { MarkdownModule, MarkdownService, SECURITY_CONTEXT } from 'ngx-markdown'
 })
 export class MessageListComponent implements OnChanges {
 
-
   @Input() messages: Message[] = []
   @Input() newToken: CountedToken | undefined;
   @Input() stateMessage: String | undefined;
   @Input() errorMessage: CountedError | undefined;
   @Input() queuePosition: number = 0;
+  @Input() socket: WebSocket | undefined;
 
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
   @ViewChild('scrollContainerThink') private scrollContainerThink!: ElementRef;
@@ -215,5 +215,22 @@ export class MessageListComponent implements OnChanges {
       .getFinalContent(msg)
       .trim()
     );
+  }
+
+  thumbsDown() {
+    if (this.socket) {
+      this.socket.send(JSON.stringify({
+        message_type: "ThumbsDown",
+        content: ""
+      }));
+    }
+  }
+  thumbsUp() {
+    if (this.socket) {
+      this.socket.send(JSON.stringify({
+        message_type: "ThumbsUp",
+        content: ""
+      }));
+    }
   }
 }

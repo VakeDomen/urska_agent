@@ -50,8 +50,8 @@
 
         @if (msg.done) {
           <div class="actions">
-            <i class="far fa-thumbs-up"></i>
-            <i class="far fa-thumbs-down"></i>
+            <i class="far fa-thumbs-up" (click)="thumbsUp()"></i>
+            <i class="far fa-thumbs-down" (click)="thumbsDown()"></i>
             <i class="fas fa-clone" (click)="copyToClipboard(msg)"></i>
 
             <span class="time">

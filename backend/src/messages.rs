@@ -12,6 +12,8 @@ use crate::{
 pub enum MessageType {
     StudentLogin,
     EmployeeLogin,
+    ThumbsUp,
+    ThumbsDown,
     Logout,
     Prompt,
 }
