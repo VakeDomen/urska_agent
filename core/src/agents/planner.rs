@@ -232,7 +232,7 @@ You are a meticulous Tactical Planner Agent. You will be given a high-level stra
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Planner")
-        .set_response_format(serde_json::to_string_pretty(&schema_for!(Plan)).unwrap())
+        .set_response_format_from::<Plan>()
         .set_system_prompt(system_prompt)
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
         // .set_model("gemma3:270m")

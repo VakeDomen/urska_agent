@@ -206,7 +206,7 @@ Correct new JSON plan output
         .set_name("Plan revisor")
         .set_system_prompt(system_prompt)
         .set_template(template)
-        .set_response_format(serde_json::to_string_pretty(&schema_for!(Plan)).unwrap())
+        .set_response_format_from::<Plan>()
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
         // .set_model("gemma3:270m")
         .set_clear_history_on_invocation(true)

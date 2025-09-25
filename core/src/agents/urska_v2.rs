@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use futures::future::join_all;
-use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification, NotificationContent, Template, ToolCall, ToolCallFunction, ToolType};
+use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification, NotificationContent, NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType};
 use serde_json::{json, to_value};
 
 use crate::{
@@ -154,7 +154,7 @@ Given the above context respond to the following user query:
     let final_prompt= template.compile(&args).await;
     urska.history.push(Message::user(final_prompt));
     let out = invoke_without_tools(urska).await?.message;
-    urska.notify(reagent_rs::NotificationContent::Done(true, out.content.clone())).await;
+    urska.notify_done(true, out.content.clone()).await;
     conversation.push(out.clone());
     store_display_conversation(urska, conversation);
     Ok(out)
@@ -323,9 +323,9 @@ fn into_tool_call(function: ToolCallFunction) -> ToolCall {
 
 
 async fn send_notifcation<T>(agent: &mut Agent, message: T) where T: Into<String> {
-    agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+    agent.notify_custom(to_value(&UrskaNotification {
         message: message.into()
-    }).unwrap())).await;
+    }).unwrap()).await;
 }
 
 pub fn get_display_conversation(agent: &Agent) -> Vec<Message> {

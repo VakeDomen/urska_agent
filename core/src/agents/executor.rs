@@ -1,4 +1,4 @@
-use reagent_rs::{flow, invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, AgentError, Message, Notification, NotificationContent};
+use reagent_rs::{flow, invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, AgentError, Message, Notification, NotificationContent, NotificationHandler};
 use tokio::sync::mpsc::Receiver;
 
 pub async fn create_single_task_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
@@ -96,6 +96,6 @@ async fn executor_flow(agent: &mut Agent, prompt: String) -> Result<Message, Age
         resp = invoke_with_tool_calls(agent).await?;
     } 
     // let response = invoke_without_tools(agent).await?;
-    agent.notify(NotificationContent::Done(true, resp.message.content.clone())).await;
+    agent.notify_done(true, resp.message.content.clone()).await;
     Ok(resp.message)
 }

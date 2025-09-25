@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use futures::future::join_all;
-use reagent_rs::{flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, Role, StatelessPrebuild, Template};
+use reagent_rs::{flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, NotificationHandler, Role, StatelessPrebuild, Template};
 use rmcp::transport::worker;
 use serde::Serialize;
 use serde_json::{json, to_value};
@@ -24,9 +24,9 @@ pub struct UrskaNotification {
 }
 
 pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
-    agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+    agent.notify_custom(to_value(&UrskaNotification {
         message: "Preparing...".into()
-    }).unwrap())).await;
+    }).unwrap()).await;
 
     agent.history.push(Message::user(prompt.clone()));
     let mut inner_iterations_bound = 100;
@@ -51,9 +51,9 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
     // more than system + first prompt
     // query rewrite
     if agent.history.len() > 2 {
-        agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+        agent.notify_custom(to_value(&UrskaNotification {
             message: "Assessing query...".into()
-        }).unwrap())).await;
+        }).unwrap()).await;
 
 
 
@@ -70,9 +70,9 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
     // if we have access to FAQ, check if we can answer right away using FAQ
     let mut FAQ = None;
     if let Some(tool) = agent.get_tool_ref_by_name("retrieve_similar_FAQ") {
-        quick_responder_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+        quick_responder_agent.notify_custom(to_value(&UrskaNotification {
             message: "Checking for quick response...".into()
-        }).unwrap())).await;
+        }).unwrap()).await;
 
 
         let faq = match tool.execute(json!({
@@ -84,7 +84,7 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
         };
 
         quick_responder_agent
-            .notify(NotificationContent::ToolCallSuccessResult(faq.clone()))
+            .notify_tool_success(faq.clone())
             .await;
 
         let input = HashMap::from([
@@ -117,9 +117,9 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
 
 
     if FAQ.is_none() {
-        planner_agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+        planner_agent.notify_custom(to_value(&UrskaNotification {
             message: "Thinking how to find the requested information...".into()
-        }).unwrap())).await;
+        }).unwrap()).await;
 
 
         // create a detailed step by step plan on how to tackle the problem
@@ -143,9 +143,9 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
                 let mut executor_task_log = vec![];
 
                 for step in step_sequence.into_iter() {
-                    worker.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+                    worker.notify_custom(to_value(&UrskaNotification {
                         message: step.clone()
-                    }).unwrap())).await;
+                    }).unwrap()).await;
 
                     let response = match worker.invoke_flow(step.clone()).await {
                         Ok(resp) => resp,
@@ -169,9 +169,9 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
         
         }
 
-        agent.notify(NotificationContent::Custom(to_value(&UrskaNotification {
+        agent.notify_custom(to_value(&UrskaNotification {
             message: "Constructing answer...".into()
-        }).unwrap())).await;
+        }).unwrap()).await;
 
         let executor_results = join_all(executor_fututres).await;
         let mut past_steps: Vec<(String, String)> = Vec::new();
@@ -201,14 +201,7 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
             .join("\n\n---\n\n");
 
         flow_histroy.push(Message::tool(aggregated_history, "0"));
-
-
-
     }
-
-    
-
-
     
     flow_histroy.push(Message::user(prompt));
 
@@ -223,7 +216,9 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
 
     agent.history = conversation_history;
 
-    agent.notify(NotificationContent::Done(true, response.message.content.clone())).await;
+    agent
+        .notify_done(true, response.message.content.clone())
+        .await;
     Ok(response.message)
 }
 

@@ -25,7 +25,7 @@ pub async fn build_function_filter_agent(urska: &mut Agent) -> Result<(Agent, Re
         .import_prompt_config(urska.export_prompt_config().await.unwrap_or_default())
         .set_system_prompt(system_prompt)
         .set_template(template)
-        .set_response_format(serde_json::to_string_pretty(&schema_for!(Requirement)).unwrap())
+        .set_response_format_from::<Requirement>()
         .build_with_notification()
         .await
 }

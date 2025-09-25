@@ -43,11 +43,8 @@ pub async fn create_quick_response_agent(ref_agent: &Agent) -> Result<(Agent, Re
         .import_prompt_config(prompt_config)
         .set_name("Quick")
         .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
-        // .set_model("qwen3:0.6b")
-
-        // .set_model("gemma3:270m")
         .set_template(template)
-        .set_response_format(serde_json::to_string_pretty(&schema_for!(Answerable)).unwrap())
+        .set_response_format_from::<Answerable>()
         .set_system_prompt(system_prompt)
         .set_clear_history_on_invocation(true)
         .build_with_notification()
