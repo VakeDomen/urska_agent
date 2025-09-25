@@ -8,13 +8,6 @@ use crate::{
     agents::{function_filter::{build_function_filter_agent, Requirement}, prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}}, *
 };
 
-
-#[derive(Debug, Clone)]
-pub struct Conversation {
-    invocations: Vec<Message>
-}
-
-
 async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
     
     send_notifcation(urska, "Preparing...").await;
