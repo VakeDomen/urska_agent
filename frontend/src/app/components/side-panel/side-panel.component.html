@@ -15,6 +15,7 @@
         [ngClass]="getDeltaColorClass(n.timeDelta)">
         +{{ n.timeDelta.toFixed(1) }}s
       </span>
+      <i class="fas fa-clone" (click)="copyToClipboard(n.content)"></i>
       <span class="arrow">{{ n.expanded ? '▼' : '▶' }}</span>
     </div>
 

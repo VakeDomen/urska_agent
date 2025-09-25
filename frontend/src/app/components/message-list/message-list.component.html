@@ -35,7 +35,7 @@
           </div>
         </div>
         }
-        <div [@collapse]="isThinking(msg)">
+        <div class="thinking-box" [@collapse]="isThinking(msg)">
           <h4 class="thinking-header">🤔 Thinking...</h4>
           <div class="thinking-content" #scrollContainerThink>
             {{ getThinkingContent(msg) }}
@@ -53,6 +53,8 @@
             <i class="far fa-thumbs-up" (click)="thumbsUp()"></i>
             <i class="far fa-thumbs-down" (click)="thumbsDown()"></i>
             <i class="fas fa-clone" (click)="copyToClipboard(msg)"></i>
+
+            <span>{{ actionMessage }}</span>
 
             <span class="time">
               {{ calcTookTime(msg) }}

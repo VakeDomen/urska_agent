@@ -149,4 +149,30 @@ export class SidePanelComponent implements AfterViewInit, OnDestroy, OnChanges {
       return null;
     }
   }
+
+  copyToClipboard(msg: NotificationContent) {
+    let content = '';
+    if ('Done' in msg) {
+      content = JSON.stringify(msg.Done);
+    } else if ('PromptRequest' in msg) {
+      content = JSON.stringify(msg.PromptRequest);
+    } else if ('PromptSuccessResult' in msg) {
+      content = JSON.stringify(msg.PromptSuccessResult);
+    } else if ('PromptErrorResult' in msg) {
+      content = msg.PromptErrorResult;
+    } else if ('ToolCallRequest' in msg) {
+      content = JSON.stringify(msg.ToolCallRequest);
+    } else if ('ToolCallSuccessResult' in msg) {
+      content = msg.ToolCallSuccessResult;
+    } else if ('ToolCallErrorResult' in msg) {
+      content = msg.ToolCallErrorResult;
+    } else if ('McpToolNotification' in msg) {
+      content = msg.McpToolNotification;
+    } else if ('Token' in msg) {
+      content = `${msg.Token.key}: ${msg.Token.value}`;
+    } else if ('Custom' in msg) {
+      content = msg.Custom.message;
+    }
+    navigator.clipboard.writeText(content.trim());
+  }
 }

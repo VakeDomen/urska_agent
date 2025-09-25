@@ -42,6 +42,7 @@ export class MessageListComponent implements OnChanges {
   @ViewChild('scrollContainerThink') private scrollContainerThink!: ElementRef;
 
   lastMessageLenToBottom: number = 0;
+  actionMessage: string = "";
 
   ngOnChanges(changes: SimpleChanges): void {
     // new state
@@ -215,6 +216,7 @@ export class MessageListComponent implements OnChanges {
       .getFinalContent(msg)
       .trim()
     );
+    this.actionMessage = "Copied!"
   }
 
   thumbsDown() {
@@ -223,6 +225,7 @@ export class MessageListComponent implements OnChanges {
         message_type: "ThumbsDown",
         content: ""
       }));
+      this.actionMessage = "Thank you for feedback!"
     }
   }
   thumbsUp() {
@@ -231,6 +234,7 @@ export class MessageListComponent implements OnChanges {
         message_type: "ThumbsUp",
         content: ""
       }));
+      this.actionMessage = "Thank you for feedback!"
     }
   }
 }
