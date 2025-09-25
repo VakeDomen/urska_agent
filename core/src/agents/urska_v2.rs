@@ -1,5 +1,6 @@
 use std::{collections::HashMap, env};
 
+use chrono::{NaiveDateTime, Utc};
 use futures::future::join_all;
 use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification, NotificationContent, NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType};
 use serde_json::{json, to_value};
@@ -124,13 +125,21 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
 
     let context = context_chunks.join("\n\n---\n\n");
 
+
+    let now = Utc::now()
+        .to_rfc2822()
+        .to_string();
+
     let args = HashMap::from([
+        ("date".to_string(), now),
         ("context".to_string(), context),
         ("prompt".to_string(), prompt)
     ]);
 
     let template = Template::simple(r#"
 Below you are given context information to help you answer the user query.
+
+Today: {{date}}
 
 ---
 

@@ -94,11 +94,6 @@ impl Service {
         client: Peer<RoleServer>,
         meta: Meta
     ) -> Result<CallToolResult, rmcp::Error> {
-        // let mut pre_agent = build_urska_v2().await.unwrap();
-        // let r = pre_agent.invoke_flow(question.question.clone()).await;
-        // if let Ok(resp) = r {
-        //     return Ok(CallToolResult::success(vec![Content::text(resp.content.unwrap())]));
-        // }
         let start = SystemTime::now();
         let mut agent = self.agent.lock().await;
         let mut notification_channel = match agent.new_notification_channel().await {
@@ -129,8 +124,6 @@ impl Service {
         });
         println!("Answering query: {}", question.question);
         let resp = agent.invoke_flow(question.question.clone()).await;
-        // let file_name = format!("{}_conversation.json", self.id);
-        // let _ = agent.save_history(file_name);
         println!("Time to answer query: {:?} | {}", start.elapsed(), question.question);
         Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }
