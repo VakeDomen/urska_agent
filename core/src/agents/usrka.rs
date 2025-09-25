@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
 
 use futures::future::join_all;
 use reagent_rs::{flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, NotificationHandler, Role, StatelessPrebuild, Template};
@@ -333,13 +333,9 @@ The report must be faithful to the execution log, clear, and useful to the stude
     AgentBuilder::default()
         .set_system_prompt(system_prompt)
         .set_flow(flow!(plan_and_execute_flow))
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
-
-        // .set_model("gemma3:270m")
-        // .set_model("gpt-oss:120b")
-        // .set_model("qwen3:0.6b")
         .set_name("Urška")
-        .set_base_url("http://hivecore.famnit.upr.si:6666")
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_model(env::var("MODEL").expect("MODEL not set"))
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))

@@ -1,3 +1,5 @@
+use std::env;
+
 use reagent_rs::{Agent, AgentBuildError, Notification, StatelessPrebuild, Template, ToolCall, ToolCallFunction, ToolType};
 use schemars::{schema_for, JsonSchema};
 use serde::Deserialize;
@@ -19,7 +21,8 @@ pub async fn build_function_filter_agent(urska: &mut Agent) -> Result<(Agent, Re
 
     StatelessPrebuild::reply_without_tools()
         .set_name("Source Filter")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_model(env::var("MODEL").expect("MODEL not set"))
         .import_client_config(urska.export_client_config())
         .import_model_config(urska.export_model_config())
         .import_prompt_config(urska.export_prompt_config().await.unwrap_or_default())

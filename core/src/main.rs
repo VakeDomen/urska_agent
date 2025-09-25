@@ -1,5 +1,6 @@
 use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
+use dotenv::dotenv;
 use reagent_rs::{init_default_tracing, Agent};
 use rmcp::{
     handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, 
@@ -31,6 +32,7 @@ const BIND_ADDRESS: &str = "127.0.0.1:8004";
 #[tokio::main]
 async fn main() -> Result<()> {
     init_default_tracing();
+    let _ = dotenv();
 
 
     let agent = build_urska_v2().await?;
@@ -127,8 +129,8 @@ impl Service {
         });
         println!("Answering query: {}", question.question);
         let resp = agent.invoke_flow(question.question.clone()).await;
-        let file_name = format!("{}_conversation.json", self.id);
-        let _ = agent.save_history(file_name);
+        // let file_name = format!("{}_conversation.json", self.id);
+        // let _ = agent.save_history(file_name);
         println!("Time to answer query: {:?} | {}", start.elapsed(), question.question);
         Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }

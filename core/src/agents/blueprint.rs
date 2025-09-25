@@ -1,3 +1,5 @@
+use std::env;
+
 use reagent_rs::{Agent, AgentBuildError, Notification,StatelessPrebuild, Template};
 use tokio::sync::mpsc::Receiver;
 
@@ -75,8 +77,8 @@ pub async fn create_blueprint_agent(ref_agent: &Agent) -> Result<(Agent, Receive
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Thinker")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
-        // .set_model("gemma3:270m")
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_model(env::var("MODEL").expect("MODEL not set"))
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_clear_history_on_invocation(true)

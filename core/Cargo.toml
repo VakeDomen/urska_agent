@@ -24,4 +24,5 @@ html-escape = "0.2.13"
 async-trait = "0.1.88"
 axum = "0.8.4"
 futures = "0.3.31"
+dotenv = "0.15.0"
 

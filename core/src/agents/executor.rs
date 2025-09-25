@@ -1,3 +1,5 @@
+use std::env;
+
 use reagent_rs::{flow, invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, AgentError, Message, Notification, NotificationContent, NotificationHandler};
 use tokio::sync::mpsc::Receiver;
 
@@ -71,10 +73,9 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Step executor")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_model(env::var("MODEL").expect("MODEL not set"))
         .strip_thinking(true)
-        // .set_model("qwen3:0.6b")
-        // .set_model("gemma3:270m")
         .set_system_prompt(system_prompt)
         .set_flow(flow!(executor_flow))
         // .set_clear_history_on_invocation(true)

@@ -1,3 +1,5 @@
+use std::env;
+
 use reagent_rs::{Agent, AgentBuildError, Notification,StatelessPrebuild, Template};
 use serde::Deserialize;
 use tokio::sync::mpsc::Receiver;
@@ -42,7 +44,8 @@ pub async fn create_quick_response_agent(ref_agent: &Agent) -> Result<(Agent, Re
         .import_model_config(model_config)
         .import_prompt_config(prompt_config)
         .set_name("Quick")
-        .set_model("hf.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:UD-Q4_K_XL")
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_model(env::var("MODEL").expect("MODEL not set"))
         .set_template(template)
         .set_response_format_from::<Answerable>()
         .set_system_prompt(system_prompt)
