@@ -41,11 +41,11 @@ VOL_NODE_MODULES="ng_node_modules_$$"
 VOL_NPM_CACHE="ng_npm_cache_$$"
 VOL_ANGULAR_CACHE="ng_angular_cache_$$"
 
-docker volume create "${VOL_NODE_MODULES}" >/dev/null
-docker volume create "${VOL_NPM_CACHE}" >/dev/null
-docker volume create "${VOL_ANGULAR_CACHE}" >/dev/null
+sudo docker volume create "${VOL_NODE_MODULES}" >/dev/null
+sudo docker volume create "${VOL_NPM_CACHE}" >/dev/null
+sudo docker volume create "${VOL_ANGULAR_CACHE}" >/dev/null
 
-docker run --rm \
+sudo docker run --rm \
   -e CI=true \
   -e NG_CLI_ANALYTICS=false \
   -e HOME=/tmp \
@@ -80,6 +80,6 @@ docker run --rm \
 
 chown -R "${HOST_UID}:${HOST_GID}" "${OUT_DIR_ABS}"
 
-docker volume rm "${VOL_NODE_MODULES}" "${VOL_NPM_CACHE}" "${VOL_ANGULAR_CACHE}" >/dev/null
+sudo docker volume rm "${VOL_NODE_MODULES}" "${VOL_NPM_CACHE}" "${VOL_ANGULAR_CACHE}" >/dev/null
 
 echo "build complete, files are in: ${OUT_DIR_ABS}"
