@@ -7,7 +7,6 @@ if [[ "${EUID}" -ne 0 ]]; then
   echo "please run this script with sudo"
   exit 1
 fi
-
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required but not found"
   exit 1
@@ -15,7 +14,6 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="${SCRIPT_DIR}/frontend"
-
 if [[ ! -d "${FRONTEND_DIR}" ]]; then
   echo "missing ./frontend directory next to this script"
   exit 1
@@ -37,28 +35,36 @@ OUT_DIR_ABS="$(cd "${OUT_DIR}" && pwd)"
 
 NODE_IMAGE="node:20-bookworm"
 
-VOL_NODE_MODULES="ng_node_modules_$$"
+VOL_WORK="ng_work_$$"
 VOL_NPM_CACHE="ng_npm_cache_$$"
 VOL_ANGULAR_CACHE="ng_angular_cache_$$"
 
-sudo docker volume create "${VOL_NODE_MODULES}" >/dev/null
-sudo docker volume create "${VOL_NPM_CACHE}" >/dev/null
-sudo docker volume create "${VOL_ANGULAR_CACHE}" >/dev/null
+docker volume create "${VOL_WORK}" >/dev/null
+docker volume create "${VOL_NPM_CACHE}" >/dev/null
+docker volume create "${VOL_ANGULAR_CACHE}" >/dev/null
 
-sudo docker run --rm \
+docker run --rm \
   -e CI=true \
   -e NG_CLI_ANALYTICS=false \
   -e HOME=/tmp \
-  -v "${FRONTEND_DIR_ABS}:/app:ro" \
-  -v "${VOL_NODE_MODULES}:/app/node_modules" \
+  -v "${FRONTEND_DIR_ABS}:/src:ro" \
+  -v "${VOL_WORK}:/work" \
   -v "${VOL_NPM_CACHE}:/tmp/.npm" \
-  -v "${VOL_ANGULAR_CACHE}:/app/.angular" \
+  -v "${VOL_ANGULAR_CACHE}:/work/.angular" \
   -v "${OUT_DIR_ABS}:/out" \
-  -w /app \
+  -w /work \
   "${NODE_IMAGE}" \
   bash -lc '
     set -e
-    mkdir -p /tmp/.npm /app/.angular
+    mkdir -p /tmp/.npm /work/.angular
+
+    # copy source into writable workspace
+    shopt -s dotglob
+    cp -a /src/* /work/
+    shopt -u dotglob
+
+    # ensure any stray node_modules from host are gone
+    rm -rf /work/node_modules
 
     if [ -f pnpm-lock.yaml ]; then
       corepack enable pnpm
@@ -80,6 +86,6 @@ sudo docker run --rm \
 
 chown -R "${HOST_UID}:${HOST_GID}" "${OUT_DIR_ABS}"
 
-sudo docker volume rm "${VOL_NODE_MODULES}" "${VOL_NPM_CACHE}" "${VOL_ANGULAR_CACHE}" >/dev/null
+docker volume rm "${VOL_WORK}" "${VOL_NPM_CACHE}" "${VOL_ANGULAR_CACHE}" >/dev/null
 
 echo "build complete, files are in: ${OUT_DIR_ABS}"
