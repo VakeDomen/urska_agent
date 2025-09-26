@@ -1,0 +1,13 @@
+[Unit]
+Description=Urska service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/var/www/urska_agent/core/target/release/urska_agent
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
