@@ -1,26 +1,40 @@
-import { Component, OnInit, ChangeDetectorRef, ChangeDetectionStrategy, effect, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { MessageListComponent } from '../message-list/message-list.component';
-import { ChatInputComponent } from '../chat-input/chat-input.component';
-import { SidePanelComponent } from '../side-panel/side-panel.component';
-import { CountedError, CountedToken, Message } from '../../models/message.model';
-import { Notification, BackendNotification } from '../../models/notification.model';
-import { StateService } from '../../state/state.service';
-import { UserProfile } from '../../models/profile.model';
+import {
+  Component,
+  OnInit,
+  ChangeDetectorRef,
+  ChangeDetectionStrategy,
+  effect,
+  computed,
+} from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { MessageListComponent } from "../message-list/message-list.component";
+import { ChatInputComponent } from "../chat-input/chat-input.component";
+import { SidePanelComponent } from "../side-panel/side-panel.component";
+import {
+  CountedError,
+  CountedToken,
+  Message,
+} from "../../models/message.model";
+import {
+  Notification,
+  BackendNotification,
+} from "../../models/notification.model";
+import { StateService } from "../../state/state.service";
+import { UserProfile } from "../../models/profile.model";
 import { LoginModalComponent } from "../login/login.component";
 
 @Component({
-  selector: 'app-chat',
+  selector: "app-chat",
   standalone: true,
   imports: [
     CommonModule,
     MessageListComponent,
     ChatInputComponent,
     SidePanelComponent,
-    LoginModalComponent
-],
-  templateUrl: './chat.component.html',
-  styleUrls: ['./chat.component.css'],
+    LoginModalComponent,
+  ],
+  templateUrl: "./chat.component.html",
+  styleUrls: ["./chat.component.css"],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ChatComponent implements OnInit {
@@ -36,23 +50,23 @@ export class ChatComponent implements OnInit {
   public displayAdvanced = false;
   public isProcessing = false;
   public isLoggedIn = false;
-  public socket: WebSocket = new WebSocket('ws://localhost:8080/ws');
-  public socketStatus: 'connecting' | 'open' | 'closed' = 'connecting';
+  public socket: WebSocket = new WebSocket("ws://urska.famnit.upr.si/ws");
+  public socketStatus: "connecting" | "open" | "closed" = "connecting";
   public tokenCount: number = 0;
 
-  constructor(
-    private cdr: ChangeDetectorRef,
-  ) { 
+  constructor(private cdr: ChangeDetectorRef) {
     effect(() => {
-      this.displayAdvanced = (StateService.displayType() == 'advanced')
+      this.displayAdvanced = StateService.displayType() == "advanced";
       const wasLoggedIn = this.isLoggedIn;
-      this.isLoggedIn = !!StateService.userProfile(); 
+      this.isLoggedIn = !!StateService.userProfile();
 
       if (wasLoggedIn && !this.isLoggedIn) {
-        this.socket.send(JSON.stringify({ 
-          message_type: "Logout",
-          content: "" 
-        }));
+        this.socket.send(
+          JSON.stringify({
+            message_type: "Logout",
+            content: "",
+          }),
+        );
       }
 
       this.cdr.detectChanges();
@@ -61,37 +75,36 @@ export class ChatComponent implements OnInit {
 
   ngOnInit() {
     this.socket.onopen = () => {
-      this.socketStatus = 'open';
+      this.socketStatus = "open";
       this.cdr.detectChanges();
     };
 
     this.socket.onclose = () => {
-      this.socketStatus = 'closed';
+      this.socketStatus = "closed";
       this.cdr.detectChanges();
     };
 
     this.socket.onerror = () => {
-      this.socketStatus = 'closed';
+      this.socketStatus = "closed";
       this.cdr.detectChanges();
     };
 
     this.socket.onmessage = (ev: MessageEvent) => {
       const msg = JSON.parse(ev.data);
 
-      if (msg.type === 'Error') {
+      if (msg.type === "Error") {
         this.handleErrorMessage(msg);
       }
 
-      if (msg.type === 'LoginProfile') {
-        this.handleLoginProfileMessage(msg)
+      if (msg.type === "LoginProfile") {
+        this.handleLoginProfileMessage(msg);
       }
 
       if (msg.type === "QueuePosition") {
         this.handleQueuePositionMessage(msg);
       }
 
-
-      if (msg.type === 'Notification') {
+      if (msg.type === "Notification") {
         this.handleNotificationMessage(msg);
       }
 
@@ -103,35 +116,34 @@ export class ChatComponent implements OnInit {
 
     const backendNotification = JSON.parse(msg.data) as BackendNotification;
     if (
-      backendNotification.agent === 'Urška' &&
-      'Token' in backendNotification.content
+      backendNotification.agent === "Urška" &&
+      "Token" in backendNotification.content
     ) {
       this.lastToken = {
         value: backendNotification.content.Token.value,
-        seq: this.tokenCount++
+        seq: this.tokenCount++,
       } as CountedToken;
-      
-      this.cdr.detectChanges();
-      return
-    }
 
-    if ('Token' in backendNotification.content) {
+      this.cdr.detectChanges();
       return;
     }
 
+    if ("Token" in backendNotification.content) {
+      return;
+    }
 
-    if ('Custom' in backendNotification.content) {
+    if ("Custom" in backendNotification.content) {
       this.stateMessage = backendNotification.content.Custom.message;
     }
 
     if (
-      backendNotification.agent === 'Urška' &&
-      'Done' in backendNotification.content &&
+      backendNotification.agent === "Urška" &&
+      "Done" in backendNotification.content &&
       Array.isArray(backendNotification.content.Done)
     ) {
       // It's the final answer. Add it to chat and close the panel.
       this.isProcessing = false;
-      console.log("Done processing")
+      console.log("Done processing");
       // this.rightSideOpen = false;
       // this.leftSideOpen = false;
       this.lastToken = {
@@ -140,7 +152,8 @@ export class ChatComponent implements OnInit {
       } as CountedToken;
     } else {
       const arrivalTime = Date.now();
-      const lastNotification = this.notifications[this.notifications.length - 1];
+      const lastNotification =
+        this.notifications[this.notifications.length - 1];
       const timeDelta = lastNotification
         ? (arrivalTime - lastNotification.arrivalTime) / 1000
         : undefined;
@@ -154,15 +167,14 @@ export class ChatComponent implements OnInit {
         taskVisible: false,
         arrivalTime,
         timeDelta,
-      }
+      };
 
-      if ('ToolCallSuccessResult' in backendNotification.content) {
+      if ("ToolCallSuccessResult" in backendNotification.content) {
         this.leftSideOpen = true;
-        this.resultNotifications.push(notification)
+        this.resultNotifications.push(notification);
       } else {
-        this.notifications.push(notification)
+        this.notifications.push(notification);
       }
-
     }
   }
 
@@ -170,7 +182,7 @@ export class ChatComponent implements OnInit {
     if (!prompt.trim() || this.isProcessing) return;
 
     this.messages.push({
-      role: 'user',
+      role: "user",
       content: prompt,
       timestamp: new Date(),
       error: undefined,
@@ -179,22 +191,24 @@ export class ChatComponent implements OnInit {
     });
 
     this.messages.push({
-      role: 'assistant',
+      role: "assistant",
       content: "",
       timestamp: new Date(),
       error: undefined,
       state: undefined,
-      done: undefined
-    })
+      done: undefined,
+    });
 
     this.notifications = [];
     this.isProcessing = true;
     this.rightSideOpen = true;
 
-    this.socket.send(JSON.stringify({ 
-      message_type: "Prompt",
-      content: prompt 
-    }));
+    this.socket.send(
+      JSON.stringify({
+        message_type: "Prompt",
+        content: prompt,
+      }),
+    );
   }
 
   handleRightPanelEnter() {
@@ -217,16 +231,14 @@ export class ChatComponent implements OnInit {
     }
   }
 
-
   handleQueuePositionMessage(msg: any) {
     this.queuePosition = +msg.data;
   }
 
-
   handleErrorMessage(msg: any) {
     this.errorMessage = {
       seq: this.tokenCount++,
-      value: msg.data
+      value: msg.data,
     } as CountedError;
     this.isProcessing = false;
   }
