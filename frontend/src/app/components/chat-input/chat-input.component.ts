@@ -1,29 +1,29 @@
-import { Component, Output, EventEmitter, Input } from '@angular/core'
-import { CommonModule } from '@angular/common'
-import { FormsModule } from '@angular/forms'
+import { Component, Output, EventEmitter, Input } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { FormsModule } from "@angular/forms";
 
 @Component({
-  selector: 'chat-input',
+  selector: "chat-input",
   standalone: true,
-  imports: [ CommonModule, FormsModule ],
-  templateUrl: './chat-input.component.html',
-  styleUrls: ['./chat-input.component.css']
+  imports: [CommonModule, FormsModule],
+  templateUrl: "./chat-input.component.html",
+  styleUrls: ["./chat-input.component.css"],
 })
 export class ChatInputComponent {
-  text = 'how much time does the professor have to encode my grade?'
+  text = "";
   @Output() send = new EventEmitter<string>();
-  @Input() connectionStatus: 'connecting' | 'open' | 'closed' = 'closed';
+  @Input() connectionStatus: "connecting" | "open" | "closed" = "closed";
 
   onEnter(event: any) {
     if (!event.shiftKey) {
-      event.preventDefault()
-      this.emit()
+      event.preventDefault();
+      this.emit();
     }
   }
 
   emit() {
-    if (!this.text.trim()) return
-    this.send.emit(this.text)
-    this.text = ''
+    if (!this.text.trim()) return;
+    this.send.emit(this.text);
+    this.text = "";
   }
 }
