@@ -50,7 +50,7 @@ export class ChatComponent implements OnInit {
   public displayAdvanced = false;
   public isProcessing = false;
   public isLoggedIn = false;
-  public socket: WebSocket = new WebSocket("ws://urska.famnit.upr.si/ws");
+  public socket: WebSocket = new WebSocket("wss://urska.famnit.upr.si/ws");
   public socketStatus: "connecting" | "open" | "closed" = "connecting";
   public tokenCount: number = 0;
 
