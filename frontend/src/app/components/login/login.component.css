@@ -62,7 +62,12 @@ h2 {
   padding: 0.75rem;
   border: 1px solid #ccc;
   border-radius: 4px;
-  box-sizing: border-box; /* Important for padding and width calculation */
+  box-sizing: border-box;
+}
+
+.button-container {
+  display: flex;
+  gap: 1rem;
 }
 
 .login-button {
