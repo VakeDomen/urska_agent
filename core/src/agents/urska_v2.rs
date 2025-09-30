@@ -2,31 +2,42 @@ use std::{collections::HashMap, env};
 
 use chrono::{NaiveDateTime, Utc};
 use futures::future::join_all;
-use reagent_rs::{call_tools, flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification, NotificationContent, NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType};
-use serde_json::{json, to_value};
+use reagent_rs::{
+    Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification,
+    NotificationContent, NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType,
+    call_tools, flow, invoke_without_tools,
+};
+use serde_json::{Value, from_str, json, to_value};
 
 use crate::{
-    agents::{function_filter::{build_function_filter_agent, Requirement}, prompt_reconstuct::create_prompt_restructor_agent, usrka::{history_to_prompt, UrskaNotification}}, *
+    agents::{
+        function_filter::{Requirement, build_function_filter_agent},
+        prompt_reconstuct::create_prompt_restructor_agent,
+        usrka::{UrskaNotification, history_to_prompt},
+    },
+    *,
 };
 
 async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
-    
     send_notifcation(urska, "Preparing...").await;
     let mut conversation = get_display_conversation(&urska);
     conversation.push(Message::user(prompt.clone()));
 
-    let (function_filter_agent, filter_notification_channel) = build_function_filter_agent(urska).await?;
-    let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&urska).await?;
-    
+    let (function_filter_agent, filter_notification_channel) =
+        build_function_filter_agent(urska).await?;
+    let (mut rephraser_agent, rephraser_notification_channel) =
+        create_prompt_restructor_agent(&urska).await?;
+
     urska.forward_notifications(filter_notification_channel);
     urska.forward_notifications(rephraser_notification_channel);
 
-
     if urska.history.len() > 2 {
-        let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
-            ("history", history_to_prompt(&urska.history)),
-            ("prompt", prompt.clone())
-        ])).await?;
+        let rehprase_response = rephraser_agent
+            .invoke_flow_with_template(HashMap::from([
+                ("history", history_to_prompt(&urska.history)),
+                ("prompt", prompt.clone()),
+            ]))
+            .await?;
 
         if let Some(rephrased_prompt) = rehprase_response.content {
             prompt = rephrased_prompt;
@@ -35,8 +46,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
 
     send_notifcation(urska, "Searching for tools...").await;
 
-
-    let mut filter_futures  = vec![];
+    let mut filter_futures = vec![];
     if let Some(tools) = &urska.tools {
         for tool in tools {
             let prompt_clone = prompt.clone();
@@ -45,12 +55,28 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
             let filter_future = async move {
                 let args = HashMap::from([
                     ("question", prompt_clone),
-                    ("function", format!("{:#?}", tool.function))
+                    ("function", format!("{:#?}", tool.function)),
                 ]);
-    
-                let function_required: Requirement = agent_clone
+
+                println!("ARGS: {:#?}", args);
+
+                println!("FORMAT: {:#?}", agent_clone.response_format);
+
+                let function_required: Requirement = match agent_clone
                     .invoke_flow_with_template_structured_output(args)
-                    .await?;
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        println!("Could no assess: {:#?}", e);
+                        return Err(e);
+                    }
+                };
+
+                println!(
+                    "TOOL: ---\n{}\n{:#?}\n---",
+                    tool.function.name, function_required
+                );
 
                 Ok((tool.name().to_string(), function_required))
             };
@@ -58,85 +84,70 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
         }
     }
 
-    let filter_results: Vec<Result<(String, Requirement), AgentError>> = join_all(filter_futures).await;
+    let filter_results: Vec<Result<(String, Requirement), AgentError>> =
+        join_all(filter_futures).await;
 
-    
     let mut tool_calls = vec![];
+
     for result in filter_results {
         if let Ok(res) = result {
             let (tool_name, required) = res;
+
+            // skip tools the filter rejected
             if !required.function_usage_required {
                 continue;
             }
-            
 
-            let args_result = match tool_name.as_str() {
-                "get_staff_profiles" => to_value(json!({
-                    "name": prompt.clone(),
-                    "k": 1    
-                })),
-                "get_programme_info" => to_value(json!({
-                    "name": prompt.clone(),
-                    "level": "any"
-                })),
-                "list_all_programmes" => to_value(json!({
-                    "level": "any"
-                })),
-                "query_memory" => to_value(json!({
-                    "query_text": prompt.clone(),
-                    "top_k": 10,
-                })),
-                "ask_about_general_information" => to_value(json!({
-                    "question": prompt.clone(),
-                    "k": 7
-                })),
-                "ask_about_rules_and_acts" => to_value(json!({
-                    "question": prompt.clone(),
-                    "k": 7
-                })),
-                "retrieve_similar_FAQ" => to_value(json!({
-                    "question": prompt.clone(),
-                    "k": 7
-                })),
-                _ => continue,
-            };
+            // try to parse whatever the model returned into real JSON
+            // let Some(recommended_params) = &required.recommended_params else {
+            //     println!("No params for required tool.");
+            //     continue;
+            // };
 
-            let Ok(arguments) = args_result else {
+            // let Some(arguments) = normalize_params(&recommended_params) else {
+            //     println!("Skipping {} due to unparseable params", tool_name);
+            //     continue;
+            // };
+            let Ok(arguments) = to_value(required.recommended_params) else {
                 continue;
             };
 
-            send_notifcation(urska, format!("Checking for information with {}...", tool_name)).await;
+            send_notifcation(
+                urska,
+                format!("Checking for information with {}...", tool_name),
+            )
+            .await;
 
-            tool_calls.push(into_tool_call(ToolCallFunction { 
-                name: tool_name.clone(), 
-                arguments 
+            tool_calls.push(into_tool_call(ToolCallFunction {
+                name: tool_name.clone(),
+                arguments,
             }));
-            
-        };
+        }
     }
-    
+
     let tool_responses = call_tools(&urska, &tool_calls).await;
     let mut context_chunks = vec![];
-    
+
     for tool_response in tool_responses {
         send_notifcation(urska, "Checking tool retults...").await;
-        context_chunks.push(format!("# Tool resulted in:\n\n{}", tool_response.content.unwrap_or_default()));
+        context_chunks.push(format!(
+            "# Tool resulted in:\n\n{}",
+            tool_response.content.unwrap_or_default()
+        ));
     }
 
     let context = context_chunks.join("\n\n---\n\n");
 
-
-    let now = Utc::now()
-        .to_rfc2822()
-        .to_string();
+    let now = Utc::now().to_rfc2822().to_string();
 
     let args = HashMap::from([
         ("date".to_string(), now),
         ("context".to_string(), context),
-        ("prompt".to_string(), prompt)
+        ("prompt".to_string(), prompt),
     ]);
 
-    let template = Template::simple(r#"
+    let template = Template::simple(
+        r#"
 Below you are given context information to help you answer the user query.
 
 Today: {{date}}
@@ -151,9 +162,10 @@ Given the above context respond to the following user query:
 
 {{prompt}}
 
-    "#);
+    "#,
+    );
 
-    let final_prompt= template.compile(&args).await;
+    let final_prompt = template.compile(&args).await;
     urska.history.push(Message::user(final_prompt));
     let out = invoke_without_tools(urska).await?.message;
     urska.notify_done(true, out.content.clone()).await;
@@ -161,8 +173,6 @@ Given the above context respond to the following user query:
     store_display_conversation(urska, conversation);
     Ok(out)
 }
-
-
 
 pub async fn build_urska_v2() -> Result<Agent, AgentBuildError> {
     let system_prompt = r#"
@@ -274,7 +284,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 [1] http://example.com/dr-jane-doe
 [2] http://example.com/admission-requirements
 
-    skip and DO NOT include references if there is no relevant links. 
+    skip and DO NOT include references if there is no relevant links.
     Never use example.com or similar placeholders.
 
 ## General Hints
@@ -284,8 +294,6 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 * If the log is incomplete, contradictory, or inconclusive, say so directly.
 
     "#;
-
-    
 
     AgentBuilder::default()
         .set_name("Urška")
@@ -309,22 +317,26 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .await
 }
 
-
-
 fn into_tool_call(function: ToolCallFunction) -> ToolCall {
     ToolCall {
         id: None,
         tool_type: ToolType::Function,
-        function
+        function,
     }
 }
 
-
-
-async fn send_notifcation<T>(agent: &mut Agent, message: T) where T: Into<String> {
-    agent.notify_custom(to_value(&UrskaNotification {
-        message: message.into()
-    }).unwrap()).await;
+async fn send_notifcation<T>(agent: &mut Agent, message: T)
+where
+    T: Into<String>,
+{
+    agent
+        .notify_custom(
+            to_value(&UrskaNotification {
+                message: message.into(),
+            })
+            .unwrap(),
+        )
+        .await;
 }
 
 pub fn get_display_conversation(agent: &Agent) -> Vec<Message> {
@@ -336,7 +348,7 @@ pub fn get_display_conversation(agent: &Agent) -> Vec<Message> {
 
 pub fn store_display_conversation(agent: &mut Agent, conversation: Vec<Message>) {
     let Ok(val) = serde_json::to_value(conversation) else {
-        return
+        return;
     };
 
     agent.state.insert("display_conversation".into(), val);

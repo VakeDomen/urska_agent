@@ -1,14 +1,28 @@
-use std::{collections::{BTreeMap, HashSet}, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use anyhow::Result;
-use reagent::{init_default_tracing, util::invocations::invoke_without_tools, Agent, Message};
-use rmcp::{handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, schemars, tool, tool_handler, tool_router, transport::{streamable_http_server::session::local::LocalSessionManager, StreamableHttpService}, Peer, RoleServer, ServerHandler};
+use reagent::{Agent, Message, init_default_tracing, util::invocations::invoke_without_tools};
+use rmcp::{
+    Peer, RoleServer, ServerHandler,
+    handler::server::tool::{Parameters, ToolRouter},
+    model::{
+        CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo,
+    },
+    schemars, tool, tool_handler, tool_router,
+    transport::{
+        StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
+    },
+};
 use serde::Deserialize;
-use tokio::sync::{mpsc, Mutex, OnceCell};
+use tokio::sync::{Mutex, OnceCell, mpsc};
 
-use crate::{programme::{Programme, ProgrammeInfo, ProgrammeLevel, ProgrammeSection}, util::{get_page, parse_programme_list_page, rank_names}};
-
-
+use crate::{
+    programme::{Programme, ProgrammeInfo, ProgrammeLevel, ProgrammeSection},
+    util::{get_page, parse_programme_list_page, rank_names},
+};
 
 mod programme;
 mod util;
@@ -18,11 +32,9 @@ const BASE_URL: &str = "https://www.famnit.upr.si";
 const MEMORY_MCP_URL: &str = "http://localhost:8002/mcp";
 const SCRAPER_MCP_URL: &str = "http://localhost:8000/sse";
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     init_default_tracing();
-
 
     let service = StreamableHttpService::new(
         move || Ok(Service::new()),
@@ -32,12 +44,11 @@ async fn main() -> Result<()> {
 
     let router = axum::Router::new().nest_service("/mcp", service);
     let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
-    
+
     println!("- Programme MCP running at {}", BIND_ADDRESS);
     println!("(Press Ctrl+C to terminate immediately)");
 
     axum::serve(tcp_listener, router).await?;
-
 
     Ok(())
 }
@@ -68,7 +79,6 @@ pub struct ProgrammeInfoRequest {
     // pub sections: Option<Vec<String>>,
 }
 
-
 #[derive(Debug, Clone)]
 struct Service {
     tool_router: ToolRouter<Service>,
@@ -78,32 +88,43 @@ struct Service {
 #[tool_router]
 impl Service {
     pub fn new() -> Self {
-        Self { 
+        Self {
             tool_router: Self::tool_router(),
             all_programmes: Arc::new(OnceCell::new()),
         }
     }
 
     async fn get_or_init_programmes(&self) -> Result<&Vec<Programme>> {
-        self.all_programmes.get_or_try_init(|| async {
-            let programme_sources = vec![
-                ("https://www.famnit.upr.si/en/education/undergraduate", ProgrammeLevel::Undergraduate),
-                ("https://www.famnit.upr.si/en/education/master", ProgrammeLevel::Master),
-                ("https://www.famnit.upr.si/en/education/doctoral", ProgrammeLevel::Doctoral),
-            ];
-        
-            let mut all_programmes: Vec<Programme> = Vec::new();
-            for (url, level) in programme_sources {
-                match get_page(url).await {
-                    Ok(html) => {
-                        let mut parsed_programmes = parse_programme_list_page(&html, level);
-                        all_programmes.append(&mut parsed_programmes);
+        self.all_programmes
+            .get_or_try_init(|| async {
+                let programme_sources = vec![
+                    (
+                        "https://www.famnit.upr.si/en/education/undergraduate",
+                        ProgrammeLevel::Undergraduate,
+                    ),
+                    (
+                        "https://www.famnit.upr.si/en/education/master",
+                        ProgrammeLevel::Master,
+                    ),
+                    (
+                        "https://www.famnit.upr.si/en/education/doctoral",
+                        ProgrammeLevel::Doctoral,
+                    ),
+                ];
+
+                let mut all_programmes: Vec<Programme> = Vec::new();
+                for (url, level) in programme_sources {
+                    match get_page(url).await {
+                        Ok(html) => {
+                            let mut parsed_programmes = parse_programme_list_page(&html, level);
+                            all_programmes.append(&mut parsed_programmes);
+                        }
+                        Err(e) => eprintln!("Could not fetch or parse page for URL {}: {}", url, e),
                     }
-                    Err(e) => eprintln!("Could not fetch or parse page for URL {}: {}", url, e),
                 }
-            }
-            Ok::<_, anyhow::Error>(all_programmes)
-        }).await
+                Ok::<_, anyhow::Error>(all_programmes)
+            })
+            .await
     }
 
     #[tool(
@@ -111,15 +132,17 @@ impl Service {
         description = "Lists the names of available study programmes. Can be filtered by study level to list only undergraduate, master's, or doctoral programmes."
     )]
     pub async fn list_all_programmes(
-        &self, 
+        &self,
         Parameters(request): Parameters<ListProgrammesRequest>,
         _client: Peer<RoleServer>,
-        _meta: Meta
+        _meta: Meta,
     ) -> Result<CallToolResult, rmcp::Error> {
         let Ok(programmes) = self.get_or_init_programmes().await else {
-            return Ok(CallToolResult::error(vec![Content::text("
+            return Ok(CallToolResult::error(vec![Content::text(
+                "
                 Can't find any programmes. This is an error.
-            ")]))
+            ",
+            )]));
         };
 
         let target_level = match request.level.as_deref() {
@@ -132,20 +155,27 @@ impl Service {
         let mut result_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for prog in programmes.iter() {
             if target_level.is_none() || Some(prog.level.clone()) == target_level {
-                result_map.entry(prog.level.to_string()).or_default().push(prog.name.clone());
+                result_map
+                    .entry(prog.level.to_string())
+                    .or_default()
+                    .push(prog.name.clone());
             }
         }
 
-        if result_map.is_empty() { 
-            return Ok(CallToolResult::success(vec![Content::text("No programmes found for the specified level.")]));
+        if result_map.is_empty() {
+            return Ok(CallToolResult::success(vec![Content::text(
+                "No programmes found for the specified level.",
+            )]));
         }
 
         let mut md = String::new();
         for (level, progs) in result_map {
             md.push_str(&format!("\n### {}\n", level));
-            for name in progs { md.push_str(&format!("- {}\n", name)); }
+            for name in progs {
+                md.push_str(&format!("- {}\n", name));
+            }
         }
-        
+
         Ok(CallToolResult::success(vec![Content::text(md)]))
     }
 
@@ -192,7 +222,7 @@ impl Service {
 
     //     // Rank the combined strings.
     //     let ranked_names = rank_names(names_to_rank, &request.name);
-        
+
     //     // The ranked list already contains the formatted strings, so we just take the top K and join them.
     //     let top_k = ranked_names
     //         .into_iter()
@@ -204,28 +234,75 @@ impl Service {
     //     Ok(CallToolResult::success(vec![Content::text(response)]))
     // }
 
-
     #[tool(
         name = "get_programme_info",
-        description = "Return detailed programme information (ECTS, duration, etc.). If a programme with the same name exists at multiple levels, you must use the 'level' parameter to disambiguate."
+        description = "Return detailed programme information (ECTS, duration, classes, etc.). If a programme with the same name exists at multiple levels, you must use the 'level' parameter to disambiguate. Possible Values: ### Doctoral \n \
+        - Mathematical Sciences \n \
+        - Computer Science \n \
+        - Renewable Materials for Healthy Built Environments \n \
+        - Suicidology and Mental Health \n \
+        - Conservation Biology \n \
+        - Computer Science \n \
+         \n \
+         ### Master's \n \
+         - Mathematical Sciences \n \
+         - Computer Science \n \
+         - Nature Conservation \n \
+         - Biopsychology \n \
+         - Psychology \n \
+         - Sustainable Built Environments \n \
+         - Data Science \n \
+         - Mathematics with Financial Engineering \n \
+         \n \
+         ### Undergraduate \n \
+         - Mathematics \n \
+         - Mathematics in Economics and Finance \n \
+         - Computer Science \n \
+         - Bioinformatics \n \
+         - Conservation Biology \n \
+         - Biopsychology \n \
+         - Agronomy\n\n \
+        Things retrieved for programme: \n \
+         - GeneralInfo, \n \
+         - Coordinators, \n \
+         - About, \n \
+         - Goals, \n \
+         - CourseStructure, \n \
+         - FieldWork, \n \
+         - CourseTables, \n \
+         - AdmissionRequirements, \n \
+         - TransferCriteria, \n \
+         - AdvancementRequirements, \n \
+         - CompletionRequirements, \n \
+         - Competencies, \n \
+         - EmploymentOpportunities \n\n \
+         If the user is asking about the studies this tool is higly usefull.
+         "
     )]
     pub async fn get_programme_info(
         &self,
         Parameters(request): Parameters<ProgrammeInfoRequest>,
         _client: Peer<RoleServer>,
-        _meta: Meta
+        _meta: Meta,
     ) -> Result<CallToolResult, rmcp::Error> {
         let Ok(programmes) = self.get_or_init_programmes().await else {
-            return Ok(CallToolResult::error(vec![Content::text("
+            return Ok(CallToolResult::error(vec![Content::text(
+                "
                 Can't find any programmes. This is an error.
-            ")]))
+            ",
+            )]));
         };
 
         let all_names: Vec<String> = programmes.iter().map(|p| p.name.clone()).collect();
         let top_ranked_names = rank_names(all_names, &request.name);
         let best_match_name = match top_ranked_names.first() {
             Some(name) => name,
-            None => return Ok(CallToolResult::success(vec![Content::text(format!("No programme found matching the name '{}'.", request.name))])),
+            None => {
+                return Ok(CallToolResult::success(vec![Content::text(format!(
+                    "No programme found matching the name '{}'.",
+                    request.name
+                ))]));
+            }
         };
 
         let mut potential_matches: Vec<Programme> = programmes
@@ -245,33 +322,45 @@ impl Service {
                 potential_matches.retain(|p| p.level == level);
             }
         }
-        
+
         if potential_matches.len() > 1 {
-            let levels: Vec<String> = potential_matches.iter().map(|p| p.level.to_string()).collect();
-            let response = format!("Found '{}' at multiple levels: {}. Please specify which one you are interested in.", best_match_name, levels.join(", "));
+            let levels: Vec<String> = potential_matches
+                .iter()
+                .map(|p| p.level.to_string())
+                .collect();
+            let response = format!(
+                "Found '{}' at multiple levels: {}. Please specify which one you are interested in.",
+                best_match_name,
+                levels.join(", ")
+            );
             return Ok(CallToolResult::success(vec![Content::text(response)]));
         }
 
         let target_programme = match potential_matches.first() {
             Some(p) => p,
-            None => return Ok(CallToolResult::success(vec![Content::text(format!("No programme found for '{}' at the specified level.", best_match_name))])),
+            None => {
+                return Ok(CallToolResult::success(vec![Content::text(format!(
+                    "No programme found for '{}' at the specified level.",
+                    best_match_name
+                ))]));
+            }
         };
 
         let sections_to_render: Option<HashSet<ProgrammeSection>> = {
             let section_names = vec![
-                "general_info", 
-                "coordinators", 
-                "about", 
-                "goals", 
-                "course_structure", 
-                "field_work", 
-                "course_tables", 
-                "admission_requirements", 
-                "transfer_criteria", 
-                "advancement_requirements", 
-                "completion_requirements", 
-                "competencies", 
-                "employment_opportunities"
+                "general_info",
+                "coordinators",
+                "about",
+                "goals",
+                "course_structure",
+                "field_work",
+                "course_tables",
+                "admission_requirements",
+                "transfer_criteria",
+                "advancement_requirements",
+                "completion_requirements",
+                "competencies",
+                "employment_opportunities",
             ];
             let set: HashSet<ProgrammeSection> = section_names
                 .into_iter()
@@ -279,16 +368,22 @@ impl Service {
                 .collect();
             Some(set)
         };
-        
+
         let mut result = String::new();
         match get_page(&target_programme.url).await {
             Ok(html) => {
                 let info = ProgrammeInfo::from(html);
                 result.push_str(&info.to_markdown(sections_to_render.as_ref()));
-                result.push_str(&format!("\n\n---\n*Source: [{}]({})*", target_programme.url, target_programme.url));
+                result.push_str(&format!(
+                    "\n\n---\n*Source: [{}]({})*",
+                    target_programme.url, target_programme.url
+                ));
             }
             Err(_) => {
-                result = format!("Could not retrieve information for '{}'.", target_programme.name);
+                result = format!(
+                    "Could not retrieve information for '{}'.",
+                    target_programme.name
+                );
             }
         }
 
@@ -300,7 +395,10 @@ impl Service {
 impl ServerHandler for Service {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
-            instructions: Some("A set of tools for querying information about study programmes at UP FAMNIT.".into()),
+            instructions: Some(
+                "A set of tools for querying information about study programmes at UP FAMNIT."
+                    .into(),
+            ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
