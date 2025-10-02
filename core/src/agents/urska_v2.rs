@@ -1,13 +1,12 @@
 use std::{collections::HashMap, env};
 
-use chrono::{NaiveDateTime, Utc};
+use chrono::Utc;
 use futures::future::join_all;
 use reagent_rs::{
-    Agent, AgentBuildError, AgentBuilder, AgentError, McpServerType, Message, Notification,
-    NotificationContent, NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType,
-    call_tools, flow, invoke_without_tools,
+    Agent, AgentBuildError, AgentBuilder, AgentError, InvocationBuilder, McpServerType, Message,
+    NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType, call_tools, flow,
 };
-use serde_json::{Value, from_str, json, to_value};
+use serde_json::to_value;
 
 use crate::{
     agents::{
@@ -59,8 +58,6 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
                 ]);
 
                 println!("ARGS: {:#?}", args);
-
-                println!("FORMAT: {:#?}", agent_clone.response_format);
 
                 let function_required: Requirement = match agent_clone
                     .invoke_flow_with_template_structured_output(args)
@@ -167,11 +164,27 @@ Given the above context respond to the following user query:
 
     let final_prompt = template.compile(&args).await;
     urska.history.push(Message::user(final_prompt));
-    let out = invoke_without_tools(urska).await?.message;
-    urska.notify_done(true, out.content.clone()).await;
-    conversation.push(out.clone());
+    // let out = invoke_without_tools(urska).await?.message;
+    let mut out = InvocationBuilder::default()
+        .use_tools(false)
+        .invoke_with(urska)
+        .await?;
+
+    for _ in 0..urska.max_iterations.unwrap_or(5) {
+        if out.message.tool_calls.is_none() {
+            break;
+        }
+        out = InvocationBuilder::default().invoke_with(urska).await?;
+        if let Some(tc) = out.message.tool_calls.clone() {
+            for tool_msg in call_tools(urska, &tc).await {
+                urska.history.push(tool_msg);
+            }
+        }
+    }
+    urska.notify_done(true, out.message.content.clone()).await;
+    conversation.push(out.message.clone());
     store_display_conversation(urska, conversation);
-    Ok(out)
+    Ok(out.message)
 }
 
 pub async fn build_urska_v2() -> Result<Agent, AgentBuildError> {
@@ -311,7 +324,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .set_top_k(20)
         .set_min_p(0.0)
         .set_presence_penalty(0.1)
-        .set_stream(true)
+        // .set_stream(true)
         .strip_thinking(true)
         .build()
         .await

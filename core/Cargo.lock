@@ -1422,9 +1422,9 @@ dependencies = [
 
 [[package]]
 name = "reagent-rs"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "355075eeaca138b5cedbdf564373e263a7cc791bb919d156841dce21da58869e"
+checksum = "6d6dd3091e5325c21c269054fb5e85c49727fa5cccafb74696184bfc770eeaa7"
 dependencies = [
  "async-stream",
  "futures",

@@ -1,23 +1,22 @@
 use std::env;
 
-use reagent_rs::{Agent, AgentBuildError, Notification,StatelessPrebuild, Template};
-use schemars::{schema_for, JsonSchema};
+use reagent_rs::{Agent, AgentBuildError, Notification, StatelessPrebuild, Template};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Receiver;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Plan {
-  pub steps: Vec<Vec<String>>,
+    pub steps: Vec<Vec<String>>,
 }
 
-pub async fn create_planner_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
+pub async fn create_planner_agent(
+    ref_agent: &Agent,
+) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_client_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = ref_agent
-        .export_prompt_config()
-        .await
-        .unwrap_or_default();
-    
+    let prompt_config = ref_agent.export_prompt_config().await.unwrap_or_default();
+
     let system_prompt = r#"
 
 You are a meticulous Tactical Planner Agent. You will be given a high-level strategy and the original user objective or question. Your sole purpose is to convert that strategy into a concise, executable plan in strict JSON format.
@@ -219,15 +218,17 @@ You are a meticulous Tactical Planner Agent. You will be given a high-level stra
 
     "#;
 
-    let template = Template::simple(r#"
-    # These tools will be avalible to the executor agent: 
+    let template = Template::simple(
+        r#"
+    # These tools will be avalible to the executor agent:
 
     {{tools}}
 
-    Users task to create a JSON plan for: 
+    Users task to create a JSON plan for:
 
     {{prompt}}
-    "#);
+    "#,
+    );
 
     StatelessPrebuild::reply_without_tools()
         .import_client_config(ollama_config)
@@ -243,4 +244,3 @@ You are a meticulous Tactical Planner Agent. You will be given a high-level stra
         .build_with_notification()
         .await
 }
-

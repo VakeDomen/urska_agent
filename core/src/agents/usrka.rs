@@ -1,21 +1,24 @@
 use std::{collections::HashMap, env};
 
 use futures::future::join_all;
-use reagent_rs::{flow, invoke_without_tools, Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, McpServerType, Message, Notification, NotificationContent, NotificationHandler, Role, StatelessPrebuild, Template};
+use reagent_rs::{
+    Agent, AgentBuildError, AgentBuilder, AgentError, Flow, FlowFuture, InvocationBuilder,
+    McpServerType, Message, Notification, NotificationContent, NotificationHandler, Role,
+    StatelessPrebuild, Template, flow,
+};
 use rmcp::transport::worker;
 use serde::Serialize;
 use serde_json::{json, to_value};
 
 use crate::{
-    agents::blueprint::create_blueprint_agent, 
-    agents::executor::create_single_task_agent, 
-    agents::planner::{create_planner_agent, Plan}, 
-    agents::prompt_reconstuct::create_prompt_restructor_agent, 
-    agents::quick_responder::{create_quick_response_agent, Answerable}, 
-    agents::replanner::create_replanner_agent, 
-    MEMORY_URL, PROGRAMME_AGENT_URL, RAG_FAQ_SERVICE, 
-    RAG_PAGE_SERVICE, RAG_RULES_SERVICE, SCRAPER_AGENT_URL, 
-    STAFF_AGENT_URL
+    MEMORY_URL, PROGRAMME_AGENT_URL, RAG_FAQ_SERVICE, RAG_PAGE_SERVICE, RAG_RULES_SERVICE,
+    SCRAPER_AGENT_URL, STAFF_AGENT_URL,
+    agents::blueprint::create_blueprint_agent,
+    agents::executor::create_single_task_agent,
+    agents::planner::{Plan, create_planner_agent},
+    agents::prompt_reconstuct::create_prompt_restructor_agent,
+    agents::quick_responder::{Answerable, create_quick_response_agent},
+    agents::replanner::create_replanner_agent,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -23,44 +26,62 @@ pub struct UrskaNotification {
     pub message: String,
 }
 
-pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
-    agent.notify_custom(to_value(&UrskaNotification {
-        message: "Preparing...".into()
-    }).unwrap()).await;
+pub async fn plan_and_execute_flow(
+    agent: &mut Agent,
+    mut prompt: String,
+) -> Result<Message, AgentError> {
+    agent
+        .notify_custom(
+            to_value(&UrskaNotification {
+                message: "Preparing...".into(),
+            })
+            .unwrap(),
+        )
+        .await;
 
     agent.history.push(Message::user(prompt.clone()));
     let mut inner_iterations_bound = 100;
 
     let mut past_steps: Vec<(String, String)> = Vec::new();
     let mut flow_histroy: Vec<Message> = vec![Message::system(agent.system_prompt.clone())];
-    
-    let (mut quick_responder_agent, quick_responder_notification_channel) = create_quick_response_agent(&agent).await?;
-    let (mut rephraser_agent, rephraser_notification_channel) = create_prompt_restructor_agent(&agent).await?;
-    let (mut blueprint_agent, blueprint_notification_channel) = create_blueprint_agent(agent).await?;
+
+    let (mut quick_responder_agent, quick_responder_notification_channel) =
+        create_quick_response_agent(&agent).await?;
+    let (mut rephraser_agent, rephraser_notification_channel) =
+        create_prompt_restructor_agent(&agent).await?;
+    let (mut blueprint_agent, blueprint_notification_channel) =
+        create_blueprint_agent(agent).await?;
     let (mut planner_agent, planner_notification_channel) = create_planner_agent(agent).await?;
-    let (mut replanner_agent, replanner_notification_channel) = create_replanner_agent(agent).await?;
-    let (mut executor_agent, executor_notification_channel) = create_single_task_agent(agent).await?;
+    let (mut replanner_agent, replanner_notification_channel) =
+        create_replanner_agent(agent).await?;
+    let (mut executor_agent, executor_notification_channel) =
+        create_single_task_agent(agent).await?;
 
     agent.forward_notifications(quick_responder_notification_channel);
     agent.forward_notifications(rephraser_notification_channel);
     agent.forward_notifications(blueprint_notification_channel);
     agent.forward_notifications(planner_notification_channel);
     agent.forward_notifications(replanner_notification_channel);
-    agent.forward_notifications(executor_notification_channel);      
+    agent.forward_notifications(executor_notification_channel);
 
     // more than system + first prompt
     // query rewrite
     if agent.history.len() > 2 {
-        agent.notify_custom(to_value(&UrskaNotification {
-            message: "Assessing query...".into()
-        }).unwrap()).await;
+        agent
+            .notify_custom(
+                to_value(&UrskaNotification {
+                    message: "Assessing query...".into(),
+                })
+                .unwrap(),
+            )
+            .await;
 
-
-
-        let rehprase_response = rephraser_agent.invoke_flow_with_template(HashMap::from([
-            ("history", history_to_prompt(&agent.history)),
-            ("prompt", prompt.clone())
-        ])).await?;
+        let rehprase_response = rephraser_agent
+            .invoke_flow_with_template(HashMap::from([
+                ("history", history_to_prompt(&agent.history)),
+                ("prompt", prompt.clone()),
+            ]))
+            .await?;
 
         if let Some(rephrased_prompt) = rehprase_response.content {
             prompt = rephrased_prompt;
@@ -70,27 +91,29 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
     // if we have access to FAQ, check if we can answer right away using FAQ
     let mut FAQ = None;
     if let Some(tool) = agent.get_tool_ref_by_name("retrieve_similar_FAQ") {
-        quick_responder_agent.notify_custom(to_value(&UrskaNotification {
-            message: "Checking for quick response...".into()
-        }).unwrap()).await;
+        quick_responder_agent
+            .notify_custom(
+                to_value(&UrskaNotification {
+                    message: "Checking for quick response...".into(),
+                })
+                .unwrap(),
+            )
+            .await;
 
-
-        let faq = match tool.execute(json!({
-            "question": prompt,
-            "k": 10,
-        })).await {
+        let faq = match tool
+            .execute(json!({
+                "question": prompt,
+                "k": 10,
+            }))
+            .await
+        {
             Ok(resp) => resp,
             Err(_e) => "No similar FAQ found".into(),
         };
 
-        quick_responder_agent
-            .notify_tool_success(faq.clone())
-            .await;
+        quick_responder_agent.notify_tool_success(faq.clone()).await;
 
-        let input = HashMap::from([
-            ("prompt", prompt.clone()),
-            ("faq",  faq.clone().into())
-        ]);
+        let input = HashMap::from([("prompt", prompt.clone()), ("faq", faq.clone().into())]);
 
         let answ: Answerable = quick_responder_agent
             .invoke_flow_with_template_structured_output(input)
@@ -104,34 +127,39 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
     };
 
     // create a general plan on how to tackle the problem
-    let blueprint = blueprint_agent.invoke_flow_with_template(HashMap::from([
-        ("tools", format!("{:#?}", agent.tools)),
-        ("prompt", prompt.clone()),
-        ("faq", format!("{:#?}", FAQ)),
-    ])).await?;
-
+    let blueprint = blueprint_agent
+        .invoke_flow_with_template(HashMap::from([
+            ("tools", format!("{:#?}", agent.tools)),
+            ("prompt", prompt.clone()),
+            ("faq", format!("{:#?}", FAQ)),
+        ]))
+        .await?;
 
     let Some(blueprint) = blueprint.content else {
         return Err(AgentError::Runtime("Blueprint was not created".into()));
     };
 
-
     if FAQ.is_none() {
-        planner_agent.notify_custom(to_value(&UrskaNotification {
-            message: "Thinking how to find the requested information...".into()
-        }).unwrap()).await;
-
+        planner_agent
+            .notify_custom(
+                to_value(&UrskaNotification {
+                    message: "Thinking how to find the requested information...".into(),
+                })
+                .unwrap(),
+            )
+            .await;
 
         // create a detailed step by step plan on how to tackle the problem
-        let plan: Plan = planner_agent.invoke_flow_with_template_structured_output(HashMap::from([
-            ("tools", format!("{:#?}", agent.tools)),
-            ("prompt", blueprint)
-        ])).await?;
-
+        let plan: Plan = planner_agent
+            .invoke_flow_with_template_structured_output(HashMap::from([
+                ("tools", format!("{:#?}", agent.tools)),
+                ("prompt", blueprint),
+            ]))
+            .await?;
 
         // save plan to file
-        serde_json::to_writer_pretty(std::fs::File::create("last_plan.json").unwrap(), &plan).unwrap();
-
+        serde_json::to_writer_pretty(std::fs::File::create("last_plan.json").unwrap(), &plan)
+            .unwrap();
 
         let mut i = 0;
         let mut executor_fututres = vec![];
@@ -143,35 +171,40 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
                 let mut executor_task_log = vec![];
 
                 for step in step_sequence.into_iter() {
-                    worker.notify_custom(to_value(&UrskaNotification {
-                        message: step.clone()
-                    }).unwrap()).await;
+                    worker
+                        .notify_custom(
+                            to_value(&UrskaNotification {
+                                message: step.clone(),
+                            })
+                            .unwrap(),
+                        )
+                        .await;
 
                     let response = match worker.invoke_flow(step.clone()).await {
                         Ok(resp) => resp,
                         Err(e) => {
                             println!("Error executing step `{}`: {}", step, e);
                             continue;
-                        },
+                        }
                     };
-                    executor_task_log.push((
-                        Message::user(step.clone()), 
-                        response
-                    ));
+                    executor_task_log.push((Message::user(step.clone()), response));
                 }
 
                 let _ = worker.save_history(format!("executor_run_{}_conversation.json", i));
                 executor_task_log
-
             };
             i += 1;
             executor_fututres.push(executor_future);
-        
         }
 
-        agent.notify_custom(to_value(&UrskaNotification {
-            message: "Constructing answer...".into()
-        }).unwrap()).await;
+        agent
+            .notify_custom(
+                to_value(&UrskaNotification {
+                    message: "Constructing answer...".into(),
+                })
+                .unwrap(),
+            )
+            .await;
 
         let executor_results = join_all(executor_fututres).await;
         let mut past_steps: Vec<(String, String)> = Vec::new();
@@ -179,13 +212,12 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
         for executor_task_log in executor_results {
             for (task, response) in executor_task_log {
                 past_steps.push((
-                    task.content.unwrap_or_default(), 
-                    response.content.unwrap_or_default()
+                    task.content.unwrap_or_default(),
+                    response.content.unwrap_or_default(),
                 ));
             }
-    
         }
-        
+
         let aggregated_history = past_steps
             .iter()
             .enumerate()
@@ -202,16 +234,19 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
 
         flow_histroy.push(Message::tool(aggregated_history, "0"));
     }
-    
-    flow_histroy.push(Message::user(prompt));
 
+    flow_histroy.push(Message::user(prompt));
 
     let mut conversation_history = agent.history.clone();
     agent.history = flow_histroy;
-    
-    let response = invoke_without_tools(agent).await?;
+
+    // let response = invoke_without_tools(agent).await?;
+    let response = InvocationBuilder::default()
+        .use_tools(false)
+        .invoke_with(agent)
+        .await?;
     conversation_history.push(response.message.clone());
-    
+
     let _ = agent.save_history("urska_conversation.json".to_string());
 
     agent.history = conversation_history;
@@ -222,9 +257,7 @@ pub async fn plan_and_execute_flow(agent: &mut Agent, mut prompt: String) -> Res
     Ok(response.message)
 }
 
-
 pub async fn build_urska() -> Result<Agent, AgentBuildError> {
-
     let system_prompt = r#"
 You are **Urška**, a helpful, knowledgeable, and reliable assistant for the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
 Your task is to help students access accurate knowledge and information about the university.
@@ -351,10 +384,7 @@ The report must be faithful to the execution log, clear, and useful to the stude
         .set_stream(true)
         .build()
         .await
-        
 }
-
-
 
 pub fn history_to_prompt(history: &Vec<Message>) -> String {
     let mut prompt = String::from("Here is a summary of a conversation.");
@@ -373,4 +403,3 @@ pub fn history_to_prompt(history: &Vec<Message>) -> String {
     println!("CONVO: {}", prompt);
     prompt
 }
-

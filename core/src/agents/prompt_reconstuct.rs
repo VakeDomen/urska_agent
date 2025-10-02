@@ -1,17 +1,15 @@
 use std::env;
 
-use reagent_rs::{Agent, AgentBuildError, Notification,StatelessPrebuild, Template};
+use reagent_rs::{Agent, AgentBuildError, Notification, StatelessPrebuild, Template};
 use tokio::sync::mpsc::Receiver;
 
-
-pub async fn create_prompt_restructor_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
+pub async fn create_prompt_restructor_agent(
+    ref_agent: &Agent,
+) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_client_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = ref_agent
-        .export_prompt_config()
-        .await
-        .unwrap_or_default();
-    
+    let prompt_config = ref_agent.export_prompt_config().await.unwrap_or_default();
+
     let system_prompt = r#"You are a rewriting agent. You receive two inputs:
 1) conversation_history: a list of prior messages between the user and assistant
 2) question: the user’s latest message
@@ -34,7 +32,7 @@ Rules:
 9) Output only the final rewritten question as a single message. Do not include explanations of what you changed.
 
 Edge cases:
-• If multiple plausible antecedents exist in history and you cannot disambiguate, keep the user’s wording for that part and remove misleading placeholders rather than guessing.  
+• If multiple plausible antecedents exist in history and you cannot disambiguate, keep the user’s wording for that part and remove misleading placeholders rather than guessing.
 • If the question is already self-contained, return it verbatim.
 
 Examples:
@@ -70,7 +68,7 @@ Rewrite:
 
 
 History:
-- User: Doea famnit offer any scholarships for PhD students? 
+- User: Doea famnit offer any scholarships for PhD students?
 - Asistant: The co-funding of doctoral studies is available to eligible PhD candidates across all FAMNIT programmes, including Mathematical Sciences and Computer Science. This funding helps cover tuition fees and is governed by the Decree on Co-Financing of Doctoral Studies and the Criteria for the Selection of Candidates for Co-Funding Tuition Fees in Doctoral Studies at the University of Primorska 1. Eligibility is based on academic merit and adherence to formal criteria, with selection conducted by the FAMNIT Study Committee. Additionally, a scholarship for nationals of Western Balkan states is available for postgraduate studies, including doctoral programmes. This scholarship provides 8,40 EUR per academic year (70 EUR monthly) to students from Bosnia and Herzegovina, Montenegro, Kosovo, North Macedonia, and Serbia 1. However, the Open Call for the 2020/2021 academic year was not published, indicating that availability may be intermittent or subject to annual funding decisions.
 Prompt:
 - Really? 8€?
@@ -78,19 +76,21 @@ Rewrite:
 - Is the scholarship for nationals of Western Balkan states really only 8,40 EUR per month?
     "#;
 
-    let template = Template::simple(r#"
+    let template = Template::simple(
+        r#"
     # History:
 
     {{history}}
 
     ---
 
-    # Rephrase the prompt: 
+    # Rephrase the prompt:
 
     {{prompt}}
 
     Answer with the rephrased propmp
-    "#);
+    "#,
+    );
 
     StatelessPrebuild::reply_without_tools()
         .import_client_config(ollama_config)
@@ -106,4 +106,3 @@ Rewrite:
         .build_with_notification()
         .await
 }
-

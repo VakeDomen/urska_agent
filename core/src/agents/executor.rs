@@ -1,15 +1,17 @@
 use std::env;
 
-use reagent_rs::{flow, invoke_with_tool_calls, Agent, AgentBuildError, AgentBuilder, AgentError, Message, Notification, NotificationContent, NotificationHandler};
+use reagent_rs::{
+    Agent, AgentBuildError, AgentBuilder, AgentError, InvocationBuilder, Message, Notification,
+    NotificationHandler, call_tools, flow,
+};
 use tokio::sync::mpsc::Receiver;
 
-pub async fn create_single_task_agent(ref_agent: &Agent) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
+pub async fn create_single_task_agent(
+    ref_agent: &Agent,
+) -> Result<(Agent, Receiver<Notification>), AgentBuildError> {
     let ollama_config = ref_agent.export_client_config();
     let model_config = ref_agent.export_model_config();
-    let prompt_config = ref_agent
-        .export_prompt_config()
-        .await
-        .unwrap_or_default();
+    let prompt_config = ref_agent.export_prompt_config().await.unwrap_or_default();
 
     let system_prompt = r#"
 You are the Executor Agent.
@@ -62,7 +64,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 [1] http://example.com/dr-jane-doe
 [2] http://example.com/admission-requirements
 
-    skip and DO NOT include references if there is no relevant links. 
+    skip and DO NOT include references if there is no relevant links.
     Never use example.com or similar placeholders.
 
 
@@ -84,19 +86,30 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .await
 }
 
-
 async fn executor_flow(agent: &mut Agent, prompt: String) -> Result<Message, AgentError> {
     agent.history.push(Message::user(prompt));
-    
-    let mut resp = invoke_with_tool_calls(agent).await?;
+
+    // let mut resp = invoke_with_tool_calls(agent).await?;
+    let mut response = InvocationBuilder::default().invoke_with(agent).await?;
+    if let Some(tc) = response.message.tool_calls.clone() {
+        for tool_msg in call_tools(agent, &tc).await {
+            agent.history.push(tool_msg);
+        }
+    }
     for _ in 0..agent.max_iterations.unwrap_or(5) {
-    
-        if resp.message.tool_calls.is_none() {
+        if response.message.tool_calls.is_none() {
             break;
         }
-        resp = invoke_with_tool_calls(agent).await?;
-    } 
+        response = InvocationBuilder::default().invoke_with(agent).await?;
+        if let Some(tc) = response.message.tool_calls.clone() {
+            for tool_msg in call_tools(agent, &tc).await {
+                agent.history.push(tool_msg);
+            }
+        }
+    }
     // let response = invoke_without_tools(agent).await?;
-    agent.notify_done(true, resp.message.content.clone()).await;
-    Ok(resp.message)
+    agent
+        .notify_done(true, response.message.content.clone())
+        .await;
+    Ok(response.message)
 }
