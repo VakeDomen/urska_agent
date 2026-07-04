@@ -62,7 +62,7 @@ impl Profile {
     }
 
     /// Decodes the student username (e.g. "89161125") into structured info.
-    /// Format: XX YYY L SSS where XX=faculty, YYY=enrolment year, L=level, SSS=seq.
+    /// Format: XX YY L SSS where XX=faculty, YY=last 2 digits of enrolment year, L=level, SSS=seq.
     fn decode_student_number(&self) -> Option<StudentInfo> {
         let raw = self.raw_attributes.get("uid")
             .or_else(|| self.raw_attributes.get("eduPersonNickname"))?
@@ -73,9 +73,9 @@ impl Profile {
 
         Some(StudentInfo {
             faculty_code: digits[0..2].to_string(),
-            enrolment_year: digits[2..6].parse().ok()?,
-            study_level: digits[6..7].parse().ok()?,
-            seq_number: digits[7..].parse().ok()?,
+            enrolment_year: format!("20{}", &digits[2..4]).parse().ok()?,
+            study_level: digits[4..5].parse().ok()?,
+            seq_number: digits[5..].parse().ok()?,
         })
     }
 }
