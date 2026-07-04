@@ -159,15 +159,17 @@ impl ChatSession {
 
             println!("Checking credential validity");
 
-            let Some(resp) = resp else {
+            let Some(mut attrs) = resp else {
                 let end = BackendMessage::Error(format!("Invalid credentials"));
                 let _ = addr.send_message_to_client(end);
                 return;
             };
 
-            println!("RESP: {:#?}", resp);
+            println!("RESP: {:#?}", attrs);
 
-            let profile = match Profile::try_from_employee_string(resp) {
+            let dn = attrs.remove("dn").and_then(|v| v.into_iter().next()).unwrap_or_default();
+
+            let profile = match Profile::try_from_employee_string(dn, attrs) {
                 Ok(p) => p,
                 Err(e) => {
                     let end = BackendMessage::Error(format!("Profile parsing: {}", e));
@@ -209,15 +211,17 @@ impl ChatSession {
 
             println!("Checking credential validity");
 
-            let Some(resp) = resp else {
+            let Some(mut attrs) = resp else {
                 let end = BackendMessage::Error(format!("LDAP invalid credentials"));
                 let _ = addr.send_message_to_client(end);
                 return;
             };
 
-            println!("RESP: {:#?}", resp);
+            println!("RESP: {:#?}", attrs);
 
-            let profile = match Profile::try_from_student_string(resp) {
+            let dn = attrs.remove("dn").and_then(|v| v.into_iter().next()).unwrap_or_default();
+
+            let profile = match Profile::try_from_student_string(dn, attrs) {
                 Ok(p) => p,
                 Err(e) => {
                     let end = BackendMessage::Error(format!("LDAP profile parsing: {}", e));
@@ -256,10 +260,10 @@ impl ChatSession {
         let queue = self.queue.clone();
         let session_id = self.id.clone();
 
-        if self.authenticated_as.is_none() {
+        let Some(profile) = self.authenticated_as.clone() else {
             let _ = addr.send_message_to_client(BackendMessage::Error("Not logged in...".into()));
             return;
-        }
+        };
 
         actix::spawn(async move {
             let mut job_id: Option<uuid::Uuid> = None;
@@ -285,6 +289,7 @@ impl ChatSession {
             let mut urska_argument_map = Map::new();
 
             urska_argument_map.insert("question".to_string(), Value::String(message.clone()));
+            urska_argument_map.insert("user_context".to_string(), serde_json::to_value(&profile).unwrap_or_default());
 
             let fn_call_request = CallToolRequestParam {
                 name: "ask_urska".into(),

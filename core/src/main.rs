@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
+use std::{collections::HashMap, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use dotenv::dotenv;
 use reagent_rs::{Agent};
@@ -8,6 +8,7 @@ use rmcp::{
 };
 use anyhow::Result;
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::Mutex;
 
 use rmcp::transport::streamable_http_server::{
@@ -66,6 +67,7 @@ async fn main() -> Result<()> {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct StructRequest {
     pub question: String,
+    pub user_context: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -121,8 +123,17 @@ impl Service {
                     }
             }
         });
-        println!("Answering query: {}", question.question);
-        let resp = agent.invoke_flow(question.question.clone()).await;
+        println!("Answering query: {} | user_context: {:?}", question.question, question.user_context);
+
+        let user_context_str = question.user_context
+            .map(|uc| serde_json::to_string_pretty(&uc).unwrap_or_default())
+            .unwrap_or_default();
+
+        let mut prompt_data = HashMap::new();
+        prompt_data.insert("question".to_string(), question.question.clone());
+        prompt_data.insert("user_context".to_string(), user_context_str);
+
+        let resp = agent.invoke_flow_with_template(prompt_data).await;
         println!("Time to answer query: {:?} | {}", start.elapsed(), question.question);
         Ok(CallToolResult::success(vec![Content::text(resp.unwrap().content.unwrap())]))
     }

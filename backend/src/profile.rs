@@ -1,5 +1,5 @@
+use std::collections::HashMap;
 use serde::Serialize;
-
 
 #[derive(Debug, Clone, Serialize)]
 pub enum ProfileRole {
@@ -10,48 +10,27 @@ pub enum ProfileRole {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Profile {
-    role: ProfileRole,
-    username: String,
+    pub role: ProfileRole,
+    pub username: String,
+    pub raw_attributes: HashMap<String, Vec<String>>,
 }
 
 impl Profile {
-    pub fn try_from_student_string(ldap_resp: String) -> Result<Self, String> {
-        let Some(uid_chunk) = ldap_resp
-            .split(",")
-            .nth(0) else {
-                return Err("Could not extract uid chunk from student ldap string".into())
-            };
-
-
-        let Some(username) = uid_chunk
-            .split("=")
-            .nth(1) else {
-                return Err("Could not extract uid value from student ldap string".into())
-            };
-        
-        Ok(Self { 
-            role: ProfileRole::Student, 
-            username: username.into() 
-        })
+    pub fn try_from_student_string(ldap_resp: String, attrs: HashMap<String, Vec<String>>) -> Result<Self, String> {
+        let username = extract_uid(&ldap_resp)?;
+        Ok(Self { role: ProfileRole::Student, username, raw_attributes: attrs })
     }
 
-    pub fn try_from_employee_string(ldap_resp: String) -> Result<Self, String> {
-        let Some(uid_chunk) = ldap_resp
-            .split(",")
-            .nth(0) else {
-                return Err("Could not extract uid chunk from employee ldap string".into())
-            };
-
-
-        let Some(username) = uid_chunk
-            .split("=")
-            .nth(1) else {
-                return Err("Could not extract uid value from employee ldap string".into())
-            };
-        
-        Ok(Self { 
-            role: ProfileRole::Employee, 
-            username: username.into() 
-        })
+    pub fn try_from_employee_string(ldap_resp: String, attrs: HashMap<String, Vec<String>>) -> Result<Self, String> {
+        let username = extract_uid(&ldap_resp)?;
+        Ok(Self { role: ProfileRole::Employee, username, raw_attributes: attrs })
     }
+}
+
+fn extract_uid(ldap_resp: &str) -> Result<String, String> {
+    let uid_chunk = ldap_resp.split(",").nth(0)
+        .ok_or_else(|| String::from("Could not extract uid chunk from ldap string"))?;
+    let username = uid_chunk.split("=").nth(1)
+        .ok_or_else(|| String::from("Could not extract uid value from ldap string"))?;
+    Ok(username.into())
 }
