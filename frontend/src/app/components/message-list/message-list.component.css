@@ -1,8 +1,52 @@
 :host {
   display: flex;
   flex-direction: column;
-  flex: 1; /* Apply flex-grow to the component host */
-  min-height: 0; /* A crucial fix to prevent overflow issues with scrollable content in a flexbox */
+  flex: 1;
+  min-height: 0;
+}
+
+.onboarding {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.onboarding h2 {
+  font-size: 1.5em;
+  margin: 0 0 8px;
+  color: #1f2937;
+}
+
+.onboarding .subtitle {
+  color: #6b7280;
+  margin: 0 0 24px;
+  font-size: 0.95em;
+}
+
+.suggestions-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.suggestion-chip {
+  padding: 8px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 0.85em;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.suggestion-chip:hover {
+  background: #eef2ff;
+  border-color: #818cf8;
+  color: #4f46e5;
 }
 
 .message-list-container {

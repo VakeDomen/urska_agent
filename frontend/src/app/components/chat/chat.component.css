@@ -108,3 +108,33 @@
 .side-panel-container.right.open {
   transform: translateX(100%);
 }
+
+.chat-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.chat-footer chat-input {
+  flex: 1;
+}
+
+.reset-button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 0.85em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.reset-button:hover {
+  background: #f3f4f6;
+}

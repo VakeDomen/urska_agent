@@ -1,4 +1,4 @@
-import { Component, ElementRef, Input, OnChanges, SecurityContext, SimpleChanges, ViewChild } from '@angular/core'
+import { Component, ElementRef, EventEmitter, Input, OnChanges, Output, SecurityContext, SimpleChanges, ViewChild } from '@angular/core'
 import { CommonModule } from '@angular/common'
 import { trigger, style, transition, animate, state } from '@angular/animations'
 import { CountedError, CountedToken, Message } from '../../models/message.model'
@@ -37,6 +37,18 @@ export class MessageListComponent implements OnChanges {
   @Input() errorMessage: CountedError | undefined;
   @Input() queuePosition: number = 0;
   @Input() socket: WebSocket | undefined;
+  @Output() sendPrompt = new EventEmitter<string>();
+
+  readonly suggestions = [
+    { label: '📅 Academic Calendar', question: 'What are the key dates for this academic year?' },
+    { label: '📚 Study Programmes', question: 'What study programmes does FAMNIT offer?' },
+    { label: '📝 Enrolment', question: 'How do I enrol in a study programme?' },
+    { label: '👨‍🏫 Find Staff', question: 'How can I find a staff member\'s contact information?' },
+    { label: '📋 Exam Rules', question: 'What are the rules for taking exams?' },
+    { label: '🎓 Graduation', question: 'What are the steps to graduate?' },
+    { label: '💰 Fees & Scholarships', question: 'What tuition fees and scholarships are available?' },
+    { label: '🏛️ Student Office', question: 'What documents do I need from the student office?' },
+  ];
 
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
   @ViewChild('scrollContainerThink') private scrollContainerThink!: ElementRef;

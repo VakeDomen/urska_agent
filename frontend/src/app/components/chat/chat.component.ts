@@ -218,6 +218,18 @@ export class ChatComponent implements OnInit {
     }
   }
 
+  resetChat() {
+    this.messages = [];
+    this.notifications = [];
+    this.resultNotifications = [];
+    this.stateMessage = undefined;
+    this.errorMessage = undefined;
+    this.lastToken = undefined;
+    this.tokenCount = 0;
+    this.isProcessing = false;
+    this.cdr.detectChanges();
+  }
+
   sendPrompt(prompt: string) {
     if (!prompt.trim() || this.isProcessing) return;
 

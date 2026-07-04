@@ -25,8 +25,16 @@
         [errorMessage]="errorMessage"
         [queuePosition]="queuePosition"
         [socket]="socket"
+        (sendPrompt)="sendPrompt($event)"
       ></message-list>
-      <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
+      <div class="chat-footer">
+        <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
+        @if (messages.length > 0) {
+          <button class="reset-button" (click)="resetChat()" title="New chat">
+            <i class="fas fa-plus"></i> New chat
+          </button>
+        }
+      </div>
     </div>
     
     @if (displayAdvanced) {

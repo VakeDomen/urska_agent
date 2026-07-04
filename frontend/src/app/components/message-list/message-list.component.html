@@ -1,4 +1,18 @@
 <div class="message-list-container" #scrollContainer>
+  @if (messages.length === 0) {
+    <div class="onboarding">
+      <h2>Welcome to URŠKA</h2>
+      <p class="subtitle">University assistant for UP FAMNIT. Ask me anything about the faculty.</p>
+      <div class="suggestions-grid">
+        @for (s of suggestions; track s.label) {
+          <button class="suggestion-chip" (click)="sendPrompt.emit(s.question)">
+            {{ s.label }}
+          </button>
+        }
+      </div>
+    </div>
+  }
+
   <div *ngFor="let msg of messages" class="message-wrapper" [@fadeIn] [ngClass]="{
          'user-message': msg.role === 'user',
          'assistant-message': msg.role === 'assistant'
@@ -45,8 +59,6 @@
         @if (shouldRenderFinalContent(msg)) {
         <markdown [data]="getFinalContent(msg)"></markdown>
         }
-
-
 
         @if (msg.done) {
           <div class="actions">
