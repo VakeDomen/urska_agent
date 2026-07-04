@@ -433,15 +433,15 @@ For numbers in Slovene-style contexts, use a decimal comma for decimal values.
 
     let template = Template::simple(
         r#"
-Below is information about the current user to help figure out your task.
-
-## User context
+## Current user
 
 {{user_context}}
 
 ---
 
-Answer the following user question:
+Use the user context above to personalise your response. For example, greet the user by name, reference their role (student/employee), and tailor information to their study level or faculty. If the user context is empty or irrelevant, ignore it.
+
+Answer the user's question:
 
 {{question}}
 "#,
@@ -462,6 +462,7 @@ Answer the following user question:
         .add_mcp_server(McpServerType::streamable_http(RAG_FAQ_SERVICE))
         // .set_flow(flow!(flow))
         .set_system_prompt(system_prompt)
+        .set_temperature(0.5)
         .set_template(template)
         .set_stream(true)
         .strip_thinking(true)

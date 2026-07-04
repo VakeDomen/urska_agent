@@ -286,10 +286,12 @@ impl ChatSession {
                 }
             }
 
+            let user_context = profile.sanitized_context();
+
             let mut urska_argument_map = Map::new();
 
             urska_argument_map.insert("question".to_string(), Value::String(message.clone()));
-            urska_argument_map.insert("user_context".to_string(), serde_json::to_value(&profile).unwrap_or_default());
+            urska_argument_map.insert("user_context".to_string(), user_context);
 
             let fn_call_request = CallToolRequestParam {
                 name: "ask_urska".into(),
