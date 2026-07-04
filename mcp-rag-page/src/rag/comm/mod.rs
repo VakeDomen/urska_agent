@@ -8,6 +8,7 @@ use ollama_rs::{
 };
 use question::Question;
 use std::env;
+use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 
 pub mod embedding;
 pub mod qdrant;
@@ -23,9 +24,22 @@ impl Default for OllamaClient {
         let ollama_host = env::var("OLLAMA_HOST").expect("OLLAMA HOST not set");
         let ollama_port = env::var("OLLAMA_PORT").expect("OLLAMA PORT not set");
         let ollama_port: u16 = ollama_port.parse().expect("OLLAMA_PORT not u16");
+        let ollama_key = env::var("OLLAMA_KEY").expect("OLLAMA_KEY not set");
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", ollama_key))
+                .expect("invalid header value"),
+        );
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .expect("failed to build reqwest client");
 
         Self {
-            ollama: Ollama::new(ollama_host, ollama_port),
+            ollama: Ollama::new_with_client(ollama_host, ollama_port, client),
         }
     }
 }

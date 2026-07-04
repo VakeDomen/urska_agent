@@ -39,9 +39,9 @@ start rag_faq    "cd \"$ROOT/mcp-rag-faq\"   && \"$WP\" 127.0.0.1 6333 && cargo 
 # scraper has no deps listed
 start scraper    "cd \"$ROOT/mcp-scraper\"   && cargo run --release"
 
-# staff and programme wait for 8002 and 8000
-start staff      "cd \"$ROOT/mcp-staff\"     && \"$WP\" 127.0.0.1 8002 && \"$WP\" 127.0.0.1 8000 && cargo run --release"
-start programme  "cd \"$ROOT/mcp-programme\" && \"$WP\" 127.0.0.1 8002 && \"$WP\" 127.0.0.1 8000 && cargo run --release"
+# staff and programme wait for 8002 and 7999
+start staff      "cd \"$ROOT/mcp-staff\"     && \"$WP\" 127.0.0.1 8002 && \"$WP\" 127.0.0.1 7999 && cargo run --release"
+start programme  "cd \"$ROOT/mcp-programme\" && \"$WP\" 127.0.0.1 8002 && \"$WP\" 127.0.0.1 7999 && cargo run --release"
 
 # urska waits for many ports
 start urska      "cd \"$ROOT/core\" && \"$WP\" 127.0.0.1 8001 && \"$WP\" 127.0.0.1 8003 && \"$WP\" 127.0.0.1 8005 && \"$WP\" 127.0.0.1 8006 && \"$WP\" 127.0.0.1 8007 && cargo run --release"

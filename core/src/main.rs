@@ -1,9 +1,9 @@
 use std::{sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
 use dotenv::dotenv;
-use reagent_rs::{init_default_tracing, Agent};
+use reagent_rs::{Agent};
 use rmcp::{
-    handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo}, 
+    handler::server::tool::{Parameters, ToolRouter}, model::{CallToolResult, Content, Meta, ProgressNotificationParam, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router, Peer, RoleServer, ServerHandler
 };
 use anyhow::Result;
@@ -15,27 +15,26 @@ use rmcp::transport::streamable_http_server::{
 };
 
 use crate::agents::urska_v2::{build_urska_v2, get_display_conversation};
-
+use crate::agents::urska_v3::build_urska_v3;
 
 pub mod agents;
 
 const STAFF_AGENT_URL: &str = "http://localhost:8001/mcp";
 const MEMORY_URL: &str = "http://localhost:8002/mcp";
 const PROGRAMME_AGENT_URL: &str = "http://localhost:8003/mcp";
-const SCRAPER_AGENT_URL: &str = "http://localhost:8000/sse"; 
-const RAG_PAGE_SERVICE: &str = "http://localhost:8005/mcp"; 
-const RAG_RULES_SERVICE: &str = "http://localhost:8006/mcp"; 
-const RAG_FAQ_SERVICE: &str = "http://localhost:8007/mcp"; 
+const SCRAPER_AGENT_URL: &str = "http://localhost:7999/sse";
+const RAG_PAGE_SERVICE: &str = "http://localhost:8005/mcp";
+const RAG_RULES_SERVICE: &str = "http://localhost:8006/mcp";
+const RAG_FAQ_SERVICE: &str = "http://localhost:8007/mcp";
 const BIND_ADDRESS: &str = "127.0.0.1:8004";
 
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_default_tracing();
     let _ = dotenv();
 
 
-    let agent = build_urska_v2().await?;
+    let agent = build_urska_v3().await?;
 
     let conn_counter = Arc::new(AtomicI32::new(0));
 
@@ -78,18 +77,18 @@ struct Service {
 
 #[tool_router]
 impl Service {
-    pub fn new(agent: Agent, conn_counter: Arc<AtomicI32>) -> Self { 
+    pub fn new(agent: Agent, conn_counter: Arc<AtomicI32>) -> Self {
         let num = conn_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self { 
-            agent: Arc::new(Mutex::new(agent)), 
+        Self {
+            agent: Arc::new(Mutex::new(agent)),
             id: format!("{num}") ,
             tool_router: Self::tool_router(),
-        } 
+        }
     }
 
     #[tool(description = "Ask Urška a general question about UP FAMNIT. She will route it to the correct expert.")]
     pub async fn ask_urska(
-        &self, 
+        &self,
         Parameters(question): Parameters<StructRequest>,
         client: Peer<RoleServer>,
         meta: Meta
@@ -131,7 +130,7 @@ impl Service {
 
     #[tool(description = "Export conversation")]
     pub async fn export_conversation(
-        &self, 
+        &self,
     ) -> Result<CallToolResult, rmcp::Error> {
         let agent = self.agent.lock().await;
         let conversation = get_display_conversation(&agent);

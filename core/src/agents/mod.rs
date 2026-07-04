@@ -6,4 +6,5 @@ pub mod prompt_reconstuct;
 pub mod quick_responder;
 pub mod replanner;
 pub mod urska_v2;
+pub mod urska_v3;
 pub mod usrka;

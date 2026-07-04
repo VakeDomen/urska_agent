@@ -131,6 +131,7 @@ export class ChatComponent implements OnInit {
     this.queuePosition = 0;
 
     const backendNotification = JSON.parse(msg.data) as BackendNotification;
+    console.log("Received notification:", backendNotification);
     if (
       backendNotification.agent === "Urška" &&
       "Token" in backendNotification.content
@@ -191,6 +192,29 @@ export class ChatComponent implements OnInit {
       } else {
         this.notifications.push(notification);
       }
+
+      if ("ToolCallSuccessError" in backendNotification.content) {
+        this.stateMessage = "Something went wrong calling the tool.";
+        this.cdr.detectChanges();
+      }
+
+      if ("ToolCallRequest" in backendNotification.content) {
+        this.stateMessage =
+          "Lets see " +
+          backendNotification.content.ToolCallRequest.function.name +
+          "...";
+        this.cdr.detectChanges();
+      }
+
+      if ("PromptError" in backendNotification.content) {
+        this.isProcessing = false;
+        console.log("Done processing");
+        this.lastToken = {
+          value: "Something went wrong... :(",
+          seq: -1,
+        } as CountedToken;
+        this.cdr.detectChanges();
+      }
     }
   }
 
@@ -211,7 +235,7 @@ export class ChatComponent implements OnInit {
       content: "",
       timestamp: new Date(),
       error: undefined,
-      state: undefined,
+      state: "Hmmm...",
       done: undefined,
     });
 

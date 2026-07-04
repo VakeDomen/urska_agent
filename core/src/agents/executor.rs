@@ -77,6 +77,7 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .set_name("Step executor")
         .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
         .set_model(env::var("MODEL").expect("MODEL not set"))
+        .set_api_key(env::var("API_KEY").expect("API_KEYbtop not set"))
         .strip_thinking(true)
         .set_system_prompt(system_prompt)
         .set_flow(flow!(executor_flow))

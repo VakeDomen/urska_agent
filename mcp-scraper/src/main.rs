@@ -4,7 +4,7 @@ use anyhow::Result;
 use scraper::{ElementRef, Html, Node, Selector};
 use serde::Deserialize;
 
-const BIND_ADDRESS: &str = "127.0.0.1:8000";
+const BIND_ADDRESS: &str = "127.0.0.1:7999";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -35,7 +35,7 @@ impl Service {
 
     #[tool(description = "Get the current page content")]
     pub async fn get_web_page_content(
-        &self, 
+        &self,
         #[tool(aggr)] url_arg: StructRequest,
     ) -> Result<CallToolResult, rmcp::Error> {
         let content = match extract_and_absolutize_div_content(&url_arg.url).await {
@@ -44,13 +44,13 @@ impl Service {
 		html_output
             }
             Ok(None) => return Err(rmcp::Error::new(
-                rmcp::model::ErrorCode::INVALID_PARAMS, 
-                "No content found", 
+                rmcp::model::ErrorCode::INVALID_PARAMS,
+                "No content found",
                 None
             )),
             Err(e) => return Err(rmcp::Error::new(
-                rmcp::model::ErrorCode::INTERNAL_ERROR, 
-                e.to_string(), 
+                rmcp::model::ErrorCode::INTERNAL_ERROR,
+                e.to_string(),
                 None
             )),
         };
@@ -206,4 +206,3 @@ fn reconstruct_element_html_with_absolute_links(element: ElementRef, base_url: &
 
     html
 }
-

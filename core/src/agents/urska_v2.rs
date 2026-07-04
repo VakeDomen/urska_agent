@@ -46,7 +46,7 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
     send_notifcation(urska, "Searching for tools...").await;
 
     let mut filter_futures = vec![];
-    if let Some(tools) = &urska.tools {
+    if let Some(tools) = urska.tools.clone() {
         for tool in tools {
             let prompt_clone = prompt.clone();
             let mut agent_clone = function_filter_agent.clone();
@@ -84,8 +84,9 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
     let filter_results: Vec<Result<(String, Requirement), AgentError>> =
         join_all(filter_futures).await;
 
-    let mut tool_calls = vec![];
+    send_notifcation(urska, "Executing tools...").await;
 
+    let mut tool_calls = vec![];
     for result in filter_results {
         if let Ok(res) = result {
             let (tool_name, required) = res;
@@ -109,11 +110,11 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
                 continue;
             };
 
-            send_notifcation(
-                urska,
-                format!("Checking for information with {}...", tool_name),
-            )
-            .await;
+            // send_notifcation(
+            //     urska,
+            //     format!("Checking for information with {}...", tool_name),
+            // )
+            // .await;
 
             tool_calls.push(into_tool_call(ToolCallFunction {
                 name: tool_name.clone(),
@@ -122,8 +123,10 @@ async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, Ag
         }
     }
 
+
     let tool_responses = call_tools(&urska, &tool_calls).await;
     let mut context_chunks = vec![];
+    send_notifcation(urska, "Gathering data...").await;
 
     for tool_response in tool_responses {
         send_notifcation(urska, "Checking tool retults...").await;
@@ -310,8 +313,9 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
 
     AgentBuilder::default()
         .set_name("Urška")
-        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
         .set_model(env::var("MODEL").expect("MODEL not set"))
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_api_key(env::var("API_KEY").expect("API_KEY not set"))
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(RAG_PAGE_SERVICE))
@@ -319,12 +323,13 @@ Admission requires a completed bachelor’s degree [2](http://example.com/admiss
         .add_mcp_server(McpServerType::streamable_http(RAG_FAQ_SERVICE))
         .set_flow(flow!(urska_flow))
         .set_system_prompt(system_prompt)
-        .set_temperature(0.7)
-        .set_top_p(0.8)
+        .set_temperature(1.0)
+        .set_top_p(0.95)
         .set_top_k(20)
         .set_min_p(0.0)
-        .set_presence_penalty(0.1)
-        // .set_stream(true)
+        .set_presence_penalty(0.)
+        .set_keep_alive("24h".to_string())
+        .set_stream(true)
         .strip_thinking(true)
         .build()
         .await
