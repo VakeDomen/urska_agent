@@ -72,6 +72,11 @@ export class ChatComponent implements OnInit {
 
       this.cdr.detectChanges();
     });
+
+    effect(() => {
+      StateService.resetChat();
+      this.resetChat();
+    });
   }
 
   ngOnInit() {

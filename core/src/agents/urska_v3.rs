@@ -433,6 +433,9 @@ For numbers in Slovene-style contexts, use a decimal comma for decimal values.
 
     let template = Template::simple(
         r#"
+Date: {{date}}
+Current study year: {{study_year}}
+
 ## Current user
 
 {{user_context}}

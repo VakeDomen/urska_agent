@@ -7,4 +7,5 @@ import { UserProfile } from '../models/profile.model';
 export class StateService {
   public static displayType: WritableSignal<'simple' | 'advanced'> = signal('simple')
   public static userProfile: WritableSignal<UserProfile | null> = signal(null);
+  public static resetChat: WritableSignal<number> = signal(0);
 }

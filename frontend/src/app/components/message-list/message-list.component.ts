@@ -47,7 +47,7 @@ export class MessageListComponent implements OnChanges {
     { label: '📋 Exam Rules', question: 'What are the rules for taking exams?' },
     { label: '🎓 Graduation', question: 'What are the steps to graduate?' },
     { label: '💰 Fees & Scholarships', question: 'What tuition fees and scholarships are available?' },
-    { label: '🏛️ Student Office', question: 'What documents do I need from the student office?' },
+    { label: '🏛️ Student Office', question: 'What are the student office work hours?' },
   ];
 
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;

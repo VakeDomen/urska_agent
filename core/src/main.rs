@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::{atomic::AtomicI32, Arc}, time::SystemTime};
 
+use chrono::Utc;
 use dotenv::dotenv;
 use reagent_rs::{Agent};
 use rmcp::{
@@ -125,13 +126,33 @@ impl Service {
         });
         println!("Answering query: {} | user_context: {:?}", question.question, question.user_context);
 
+        let user_context_for_year = question.user_context.clone();
+
         let user_context_str = question.user_context
             .map(|uc| serde_json::to_string_pretty(&uc).unwrap_or_default())
             .unwrap_or_default();
 
+        let now = Utc::now();
+        let current_year = now.format("%Y").to_string();
+        let date_str = now.format("%A, %d %B %Y").to_string();
+
+        let study_year = user_context_for_year
+            .as_ref()
+            .and_then(|uc| uc.get("enrolment_year"))
+            .and_then(|v| v.as_u64())
+            .map(|year| {
+                let y = year as i32;
+                let cy = current_year.parse::<i32>().unwrap_or(2025);
+                let study = cy - y + 1;
+                if study < 1 { 1 } else { study }
+            })
+            .unwrap_or(0);
+
         let mut prompt_data = HashMap::new();
         prompt_data.insert("question".to_string(), question.question.clone());
         prompt_data.insert("user_context".to_string(), user_context_str);
+        prompt_data.insert("date".to_string(), date_str);
+        prompt_data.insert("study_year".to_string(), study_year.to_string());
 
         let resp = agent.invoke_flow_with_template(prompt_data).await;
         println!("Time to answer query: {:?} | {}", start.elapsed(), question.question);

@@ -29,11 +29,6 @@
       ></message-list>
       <div class="chat-footer">
         <chat-input (send)="sendPrompt($event)" [connectionStatus]="socketStatus"></chat-input>
-        @if (messages.length > 0) {
-          <button class="reset-button" (click)="resetChat()" title="New chat">
-            <i class="fas fa-plus"></i> New chat
-          </button>
-        }
       </div>
     </div>
     

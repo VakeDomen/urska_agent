@@ -22,6 +22,10 @@ export class NavbarComponent {
     });
   }
 
+  resetChat(): void {
+    StateService.resetChat.update(n => n + 1);
+  }
+
   toggleLogin(): void {
     if (this.isLoggedIn) {
       localStorage.removeItem("urska_session_token");
