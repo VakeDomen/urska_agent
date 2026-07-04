@@ -12,6 +12,7 @@ use crate::{
 pub enum MessageType {
     StudentLogin,
     EmployeeLogin,
+    RestoreSession,
     ThumbsUp,
     ThumbsDown,
     Logout,
@@ -38,6 +39,7 @@ pub enum BackendMessage {
     Notification(String),
     QueuePosition(PositionInQueue),
     LoginProfile(Profile),
+    LoginToken(String),
     Error(String),
     End,
 }

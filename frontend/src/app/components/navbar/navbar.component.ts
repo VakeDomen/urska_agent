@@ -24,6 +24,7 @@ export class NavbarComponent {
 
   toggleLogin(): void {
     if (this.isLoggedIn) {
+      localStorage.removeItem("urska_session_token");
       StateService.userProfile.set(null);
       console.log(`User is now Logged Out`);
     }

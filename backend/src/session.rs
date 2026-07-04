@@ -12,6 +12,7 @@ use rmcp::{
     service::RunningService,
 };
 use serde_json::{Map, Value};
+use std::collections::HashMap;
 use std::{env, sync::Arc};
 use tokio::{
     fs,
@@ -20,6 +21,9 @@ use tokio::{
         mpsc::{self, Receiver},
     },
 };
+use uuid::Uuid;
+
+pub type SessionStore = Arc<Mutex<HashMap<String, Profile>>>;
 #[derive(Debug)]
 pub struct ProgressHandler {
     pub notification_tx: mpsc::Sender<ProgressNotificationParam>,
@@ -49,6 +53,7 @@ pub struct ChatSession {
     pub mcp_client: RunningService<rmcp::RoleClient, ProgressHandler>,
     pub notification_reciever: Arc<Mutex<mpsc::Receiver<ProgressNotificationParam>>>,
     pub queue: Arc<Mutex<QueueManager>>,
+    pub sessions: SessionStore,
     pub authenticated_as: Option<Profile>,
 }
 
@@ -122,6 +127,7 @@ impl ChatSession {
             MessageType::Prompt => self.prompt(ctx, message.content),
             MessageType::EmployeeLogin => self.employee_login(ctx, message.content),
             MessageType::StudentLogin => self.student_login(ctx, message.content),
+            MessageType::RestoreSession => self.restore_session(ctx, message.content),
             MessageType::Logout => self.logout(ctx, message),
             MessageType::ThumbsUp => self.save_thumbs_up(ctx, message),
             MessageType::ThumbsDown => self.save_thumbs_down(ctx, message),
@@ -131,6 +137,7 @@ impl ChatSession {
     fn employee_login(&mut self, ctx: &mut ws::WebsocketContext<ChatSession>, message: String) {
         println!("Employee Login");
         let addr: Addr<ChatSession> = ctx.address();
+        let sessions = self.sessions.clone();
 
         let Ok(credentials) = serde_json::from_str::<LoginCredentials>(&message) else {
             let end = BackendMessage::Error("Invalid credentials shape".into());
@@ -169,6 +176,9 @@ impl ChatSession {
                 }
             };
 
+            let token = Uuid::new_v4().to_string();
+            sessions.lock().await.insert(token.clone(), profile.clone());
+            let _ = addr.send_message_to_client(BackendMessage::LoginToken(token));
             let _ = addr.send_message_to_client(BackendMessage::LoginProfile(profile.clone()));
             addr.do_send(Authenticated(profile));
         });
@@ -177,6 +187,7 @@ impl ChatSession {
     fn student_login(&mut self, ctx: &mut ws::WebsocketContext<ChatSession>, message: String) {
         println!("Student Login");
         let addr = ctx.address();
+        let sessions = self.sessions.clone();
 
         let Ok(credentials) = serde_json::from_str::<LoginCredentials>(&message) else {
             let end = BackendMessage::Error("Invalid credentials shape".into());
@@ -215,8 +226,26 @@ impl ChatSession {
                 }
             };
 
+            let token = Uuid::new_v4().to_string();
+            sessions.lock().await.insert(token.clone(), profile.clone());
+            let _ = addr.send_message_to_client(BackendMessage::LoginToken(token));
             let _ = addr.send_message_to_client(BackendMessage::LoginProfile(profile.clone()));
             addr.do_send(Authenticated(profile));
+        });
+    }
+
+    fn restore_session(&self, ctx: &mut ws::WebsocketContext<ChatSession>, token: String) {
+        let addr = ctx.address();
+        let sessions = self.sessions.clone();
+        actix::spawn(async move {
+            let map = sessions.lock().await;
+            if let Some(profile) = map.get(&token) {
+                let profile = profile.clone();
+                let _ = addr.send_message_to_client(BackendMessage::LoginProfile(profile.clone()));
+                addr.do_send(Authenticated(profile));
+            } else {
+                let _ = addr.send_message_to_client(BackendMessage::Error("Session expired. Please log in again.".into()));
+            }
         });
     }
 

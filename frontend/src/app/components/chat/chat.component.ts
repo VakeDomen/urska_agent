@@ -61,6 +61,7 @@ export class ChatComponent implements OnInit {
       this.isLoggedIn = !!StateService.userProfile();
 
       if (wasLoggedIn && !this.isLoggedIn) {
+        localStorage.removeItem("urska_session_token");
         this.socket.send(
           JSON.stringify({
             message_type: "Logout",
@@ -76,6 +77,17 @@ export class ChatComponent implements OnInit {
   ngOnInit() {
     this.socket.onopen = () => {
       this.socketStatus = "open";
+
+      const token = localStorage.getItem("urska_session_token");
+      if (token) {
+        this.socket.send(
+          JSON.stringify({
+            message_type: "RestoreSession",
+            content: token,
+          }),
+        );
+      }
+
       this.cdr.detectChanges();
     };
 
@@ -94,6 +106,10 @@ export class ChatComponent implements OnInit {
 
       if (msg.type === "Error") {
         this.handleErrorMessage(msg);
+      }
+
+      if (msg.type === "LoginToken") {
+        localStorage.setItem("urska_session_token", msg.data);
       }
 
       if (msg.type === "LoginProfile") {
