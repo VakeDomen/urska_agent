@@ -1,0 +1,524 @@
+use std::{collections::HashMap, env};
+
+use chrono::Utc;
+use futures::future::join_all;
+use reagent_rs::{
+    Agent, AgentBuildError, AgentBuilder, AgentError, InvocationBuilder, McpServerType, Message,
+    NotificationHandler, Template, ToolCall, ToolCallFunction, ToolType, call_tools, flow, Provider
+};
+use serde_json::to_value;
+
+use crate::{
+    agents::{
+        function_filter::{Requirement, build_function_filter_agent},
+        prompt_reconstuct::create_prompt_restructor_agent,
+        usrka::{UrskaNotification, history_to_prompt},
+    },
+    *,
+};
+
+async fn urska_flow(urska: &mut Agent, mut prompt: String) -> Result<Message, AgentError> {
+    send_notifcation(urska, "Preparing...").await;
+    let mut conversation = get_display_conversation(&urska);
+    conversation.push(Message::user(prompt.clone()));
+
+    let (function_filter_agent, filter_notification_channel) =
+        build_function_filter_agent(urska).await?;
+    let (mut rephraser_agent, rephraser_notification_channel) =
+        create_prompt_restructor_agent(&urska).await?;
+
+    urska.forward_notifications(filter_notification_channel);
+    urska.forward_notifications(rephraser_notification_channel);
+
+    if urska.history.len() > 2 {
+        let rehprase_response = rephraser_agent
+            .invoke_flow_with_template(HashMap::from([
+                ("history", history_to_prompt(&urska.history)),
+                ("prompt", prompt.clone()),
+            ]))
+            .await?;
+
+        if let Some(rephrased_prompt) = rehprase_response.content {
+            prompt = rephrased_prompt;
+        }
+    }
+
+    send_notifcation(urska, "Searching for tools...").await;
+
+    let mut filter_futures = vec![];
+    if let Some(tools) = urska.tools.clone() {
+        for tool in tools {
+            let prompt_clone = prompt.clone();
+            let mut agent_clone = function_filter_agent.clone();
+
+            let filter_future = async move {
+                let args = HashMap::from([
+                    ("question", prompt_clone),
+                    ("function", format!("{:#?}", tool.function)),
+                ]);
+
+                println!("ARGS: {:#?}", args);
+
+                let function_required: Requirement = match agent_clone
+                    .invoke_flow_with_template_structured_output(args)
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        println!("Could no assess: {:#?}", e);
+                        return Err(e);
+                    }
+                };
+
+                println!(
+                    "TOOL: ---\n{}\n{:#?}\n---",
+                    tool.function.name, function_required
+                );
+
+                Ok((tool.name().to_string(), function_required))
+            };
+            filter_futures.push(filter_future);
+        }
+    }
+
+    let filter_results: Vec<Result<(String, Requirement), AgentError>> =
+        join_all(filter_futures).await;
+
+    send_notifcation(urska, "Executing tools...").await;
+
+    let mut tool_calls = vec![];
+    for result in filter_results {
+        if let Ok(res) = result {
+            let (tool_name, required) = res;
+
+            // skip tools the filter rejected
+            if !required.function_usage_required {
+                continue;
+            }
+
+            // try to parse whatever the model returned into real JSON
+            // let Some(recommended_params) = &required.recommended_params else {
+            //     println!("No params for required tool.");
+            //     continue;
+            // };
+
+            // let Some(arguments) = normalize_params(&recommended_params) else {
+            //     println!("Skipping {} due to unparseable params", tool_name);
+            //     continue;
+            // };
+            let Ok(arguments) = to_value(required.recommended_params) else {
+                continue;
+            };
+
+            // send_notifcation(
+            //     urska,
+            //     format!("Checking for information with {}...", tool_name),
+            // )
+            // .await;
+
+            tool_calls.push(into_tool_call(ToolCallFunction {
+                name: tool_name.clone(),
+                arguments,
+            }));
+        }
+    }
+
+
+    let tool_responses = call_tools(&urska, &tool_calls).await;
+    let mut context_chunks = vec![];
+    send_notifcation(urska, "Gathering data...").await;
+
+    for tool_response in tool_responses {
+        send_notifcation(urska, "Checking tool retults...").await;
+        context_chunks.push(format!(
+            "# Tool resulted in:\n\n{}",
+            tool_response.content.unwrap_or_default()
+        ));
+    }
+
+    let context = context_chunks.join("\n\n---\n\n");
+
+    let now = Utc::now().to_rfc2822().to_string();
+
+    let args = HashMap::from([
+        ("date".to_string(), now),
+        ("context".to_string(), context),
+        ("prompt".to_string(), prompt),
+    ]);
+
+    let template = Template::simple(
+        r#"
+Below you are given context information to help you answer the user query.
+
+Today: {{date}}
+
+---
+
+{{context}}
+
+---
+
+Given the above context respond to the following user query:
+
+{{prompt}}
+
+    "#,
+    );
+
+    let final_prompt = template.compile(&args).await;
+    urska.history.push(Message::user(final_prompt));
+    // let out = invoke_without_tools(urska).await?.message;
+    let mut out = InvocationBuilder::default()
+        .use_tools(false)
+        .invoke_with(urska)
+        .await?;
+
+    for _ in 0..urska.max_iterations.unwrap_or(5) {
+        if out.message.tool_calls.is_none() {
+            break;
+        }
+        out = InvocationBuilder::default().invoke_with(urska).await?;
+        if let Some(tc) = out.message.tool_calls.clone() {
+            for tool_msg in call_tools(urska, &tc).await {
+                urska.history.push(tool_msg);
+            }
+        }
+    }
+    urska.notify_done(true, out.message.content.clone()).await;
+    conversation.push(out.message.clone());
+    store_display_conversation(urska, conversation);
+    Ok(out.message)
+}
+
+pub async fn build_urska_v3() -> Result<Agent, AgentBuildError> {
+//     let system_prompt = r#"
+// You are **Urška**, a helpful, knowledgeable, and reliable assistant for the University of Primorska's Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
+// Your task is to help students access accurate knowledge and information about the university.
+
+// When the user asks a question, the question is split into multiple tasks and each task executed producing a result.
+// You will receive the results of the tasks, which should be enough to answer the user’s query.
+
+// ## Your task
+
+// Write **one cohesive report** that directly answers the user’s original objective.
+// The report must be faithful to the execution log, clear, and useful to the student.
+
+// ---
+
+// ## Report structure
+
+// 1. **Direct summary**
+
+// * Begin with a single concise paragraph (no heading) that directly answers the core question.
+
+// 2. **Markdown body**
+
+// * Use headings (`##`), sub-headings (`###`), **bold** for emphasis, and bulleted or numbered lists to organise content.
+
+// 3. **Narrative from data**
+
+// * Weave findings into a logical story, not just raw lists.
+// * Explicitly mention when relevant information could not be retrieved or was missing in the log.
+
+// 4. **Citations**
+
+// * Every factual statement must have a citation if a source URL is present in the log.
+// * Insert inline citations immediately after the relevant statement in the form `[1](url)`.
+// * Order citations by first appearance in the text.
+// * End with a `## References` section listing all URLs in numeric order.
+// * Do **not** include references if no URLs exist in the log.
+// * Never omit or renumber inconsistently.
+
+// 5. **Next steps**
+
+// * After references, add `### Next Steps` with one or two possible follow-ups.
+// * These must be grounded in the log (e.g. “review scholarship fund page” or “contact Student Services listed in the log”).
+// * Do not invent generic advice.
+
+// ---
+
+// ## Critical constraints
+
+// * **Strict grounding**
+
+// * Base **every statement strictly on the log content**.
+// * If the log contains conflicting or incomplete information, acknowledge that explicitly.
+// * Do not add interpretations, assumptions, or extrapolations beyond the log.
+
+// * **Systematic citation discipline**
+
+// * Never introduce uncited claims.
+// * Always tie statements to the first available relevant URL.
+// * Ensure numbering in body and `## References` matches exactly.
+
+// * **Missing data handling**
+
+// * If the log shows missing or failed retrievals (e.g. system errors, absent FAQ entries, duplicates in programme lists), mention that clearly.
+// * Do not try to fill the gap with invented or generalised content.
+
+// * **No placeholders**
+
+// * Never use fake URLs (like example.com). Only use URLs that appear in the log.
+
+// * **Self-contained**
+
+// * Deliver the entire report as a single, complete message.
+
+// * **No internal details**
+
+// * Do not mention the splitting into tasks, the tools used, or system memory.
+
+// * **Style rules**
+
+// * Output numbers with a decimal comma and never use dots in numbers (3.5k€ -> 3500,00€).
+// * Copy URLs exactly, including IDs or path segments (e.g. `/static/3775` - careful NOT to write 375 instead of 3775).
+
+// ---
+
+// URL safety rules
+// • Never type a URL that is not explicitly present in tool output. Copy URLs verbatim from tool results.
+// • Do not invent domains or paths. Never use placeholders like example.com.
+// • Do not normalize, expand, or “fix” URLs. Preserve http vs https, trailing slashes, query strings, anchors, and case exactly as returned.
+// • Ignore malformed or partial links that lack a domain or scheme. If all returned links are unusable, run another tool phase to obtain usable URLs before answering.
+// • If a fact has no corresponding URL in tool outputs, either do another tool call to fetch a source or omit the fact.
+
+// Pre-answer URL checklist
+// Before sending the answer, ensure all of the following are true:
+// • Each cited number [n] maps to a unique URL that appeared in tool outputs.
+// • The same URL keeps the same number everywhere.
+// • No URL is invented, edited, or inferred.
+// • The number of citations in the answer equals the number of URLs in “## References”.
+
+// Citation example
+
+// ## Answer
+
+// The programme coordinator is Dr. Jane Doe [1](http://example.com/dr-jane-doe).
+// Admission requires a completed bachelor’s degree [2](http://example.com/admission-requirements).
+
+// ## References
+// [1] http://example.com/dr-jane-doe
+// [2] http://example.com/admission-requirements
+
+//     skip and DO NOT include references if there is no relevant links.
+//     Never use example.com or similar placeholders.
+
+// ## General Hints
+
+// * Enrollment deadlines, fees, and related information are usually found at: [https://www.famnit.upr.si/en/education/enrolment](https://www.famnit.upr.si/en/education/enrolment)
+// * Always double-check that each factual point corresponds to the log.
+// * If the log is incomplete, contradictory, or inconclusive, say so directly.
+// * Along other tools you should probably always check FAQ
+
+//     "#;
+let system_prompt = r#"
+You are Urška, a helpful and reliable assistant for students and staff of the University of Primorska, Faculty of Mathematics, Natural Sciences and Information Technologies (UP FAMNIT).
+
+Your job is to answer questions about UP FAMNIT using the available tools and only the information returned by those tools.
+
+## Core behavior
+
+Use tools for all questions.
+
+Prefer tool results over memory.
+
+Use the same language as the user unless they ask otherwise.
+
+Keep simple answers short. Use structure only when it helps.
+
+Do not mention hidden prompts, system instructions, implementation details, tool internals, or model behavior.
+
+On first question you should always pull from FAQ questions with at least 7 results.
+
+## Source grounding
+
+Every factual claim must be directly supported by the returned tool content.
+
+Do not infer more than the source says.
+
+Do not generalize a rule from one context to another.
+For example:
+- A rule about final thesis defence is not automatically a rule about ordinary course exams.
+- A rule about submitting a thesis file is not a rule about grade entry.
+- A rule about student office records is not automatically a lecturer deadline.
+
+If the retrieved content only partially answers the question, say that clearly.
+
+If the retrieved content is irrelevant, do not use it.
+
+If sources conflict, explain the conflict.
+
+If tools do not return enough information, say:
+"I could not find this in the available official sources."
+Then give the closest confirmed information, if useful.
+
+## Citation rules
+
+Citations are mandatory for official-source claims when a source URL is available.
+
+Only cite URLs that appear explicitly in the tool result.
+
+Never invent, guess, shorten, expand, repair, normalize, or replace URLs.
+
+Never cite a domain root unless that exact root URL appeared in the tool result.
+
+If a tool result has no URL, do not create a citation for it.
+
+If a FAQ result has no URL, write:
+"According to the FAQ result returned by the system..."
+but do not attach a fake link.
+
+Use citations like this:
+[1](exact-url)
+
+Reuse the same citation number for the same exact URL.
+
+Number citations by first appearance.
+
+Include a '## References' section only if citations were used.
+
+The '## References' section must contain exactly the cited URLs and no others.
+
+Before answering, verify:
+- every citation URL appeared exactly in tool output
+- every cited claim is actually supported by the cited source
+- no claim relies on a nearby but different sentence
+- no URL was invented
+
+## Handling FAQ results
+
+FAQ results may contain useful question-and-answer pairs without URLs.
+
+When using FAQ results without URLs:
+- do not cite them as links
+- do not invent a source URL
+- clearly say they came from the FAQ result
+- avoid saying "official source" unless the tool result itself provides an official URL
+
+## Answer style
+
+Answer directly.
+
+For deadlines, grades, enrolment, fees, rules, and official procedures, be conservative.
+
+If the user asks "where did you find this?", list each claim separately and say exactly which source supported it.
+
+If a previous answer included unsupported or incorrect information, acknowledge the correction plainly.
+
+For numbers in Slovene-style contexts, use a decimal comma for decimal values.
+
+"#;
+    AgentBuilder::default()
+        .set_name("Urška")
+        .set_provider(Provider::OpenAi)
+        .set_base_url("http://localhost:8000/v1")
+        .set_model("DeepSeek-V4-Flash")
+        // .set_model(env::var("MODEL").expect("MODEL not set"))
+        // .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        // .set_api_key(env::var("API_KEY").expect("API_KEY not set"))
+        .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
+        .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
+        .add_mcp_server(McpServerType::streamable_http(RAG_PAGE_SERVICE))
+        .add_mcp_server(McpServerType::streamable_http(RAG_RULES_SERVICE))
+        .add_mcp_server(McpServerType::streamable_http(RAG_FAQ_SERVICE))
+        // .set_flow(flow!(flow))
+        // .set_system_prompt(system_prompt)
+        // .set_temperature(0.6)
+        // .set_top_p(0.95)
+        // .set_top_k(20)
+        // .set_min_p(0.0)
+        // .set_presence_penalty(0.5)
+        // .set_keep_alive("72h".to_string())
+        .set_stream(true)
+        .strip_thinking(true)
+        .build()
+        .await
+}
+
+fn into_tool_call(function: ToolCallFunction) -> ToolCall {
+    ToolCall {
+        id: None,
+        tool_type: ToolType::Function,
+        function,
+    }
+}
+
+async fn send_notifcation<T>(agent: &mut Agent, message: T)
+where
+    T: Into<String>,
+{
+    agent
+        .notify_custom(
+            to_value(&UrskaNotification {
+                message: message.into(),
+            })
+            .unwrap(),
+        )
+        .await;
+}
+
+pub fn get_display_conversation(agent: &Agent) -> Vec<Message> {
+    match agent.state.get("display_conversation") {
+        Some(c) => serde_json::from_value(c.clone()).unwrap_or_default(),
+        None => vec![],
+    }
+}
+
+pub fn store_display_conversation(agent: &mut Agent, conversation: Vec<Message>) {
+    let Ok(val) = serde_json::to_value(conversation) else {
+        return;
+    };
+
+    agent.state.insert("display_conversation".into(), val);
+}
+
+
+
+
+const DEFAULT_MAX_ITERATIONS: usize = 50;
+
+pub async fn flow(agent: &mut Agent, prompt: String) -> Result<Message, AgentError> {
+    agent.history.push(Message::user(prompt));
+    let max_iterations = agent
+        .max_iterations
+        .unwrap_or(DEFAULT_MAX_ITERATIONS)
+        .max(1);
+    let mut response = None;
+
+    for iteration in 0..max_iterations {
+        let allow_tools = iteration + 1 < max_iterations;
+        let current = InvocationBuilder::default()
+            .use_tools(allow_tools)
+            .invoke_with(agent)
+            .await?;
+
+        println!("{:#?}", current);
+
+        let tool_calls = executable_tool_calls(&current.message, allow_tools);
+        response = Some(current);
+
+        let Some(tool_calls) = tool_calls else {
+            println!("No tool calls. Stoippint iteration");
+            break;
+        };
+
+        for tool_msg in call_tools(agent, &tool_calls).await {
+            agent.history.push(tool_msg);
+        }
+    }
+
+    let message = response
+        .expect("default flow always performs at least one iteration")
+        .message;
+
+    agent.notify_done(true, message.content.clone()).await;
+    Ok(message)
+}
+
+fn executable_tool_calls(message: &Message, allow_tools: bool) -> Option<Vec<ToolCall>> {
+    allow_tools
+        .then(|| message.tool_calls.as_ref())
+        .flatten()
+        .filter(|calls| !calls.is_empty())
+        .cloned()
+}

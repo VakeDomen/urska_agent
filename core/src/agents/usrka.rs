@@ -369,6 +369,7 @@ The report must be faithful to the execution log, clear, and useful to the stude
         .set_name("Urška")
         .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
         .set_model(env::var("MODEL").expect("MODEL not set"))
+        .set_api_key(env::var("API_KEY").expect("API_KEYbtop not set"))
         .add_mcp_server(McpServerType::streamable_http(STAFF_AGENT_URL))
         .add_mcp_server(McpServerType::streamable_http(PROGRAMME_AGENT_URL))
         .add_mcp_server(McpServerType::Sse(SCRAPER_AGENT_URL.into()))

@@ -60,7 +60,7 @@ fn cosine_sim(a: &HashMap<String, usize>, b: &HashMap<String, usize>) -> f64 {
 
 
 pub async fn get_page<T>(url: T) -> Result<String> where T: Into<String> {
-    let transport = SseClientTransport::start("http://localhost:8000/sse").await?;
+    let transport = SseClientTransport::start("http://localhost:7999/sse").await?;
     let client_info: rmcp::model::InitializeRequestParam = ClientInfo {
         protocol_version: Default::default(),
         capabilities: ClientCapabilities::default(),
@@ -158,6 +158,6 @@ pub async fn get_memories(arguments: serde_json::Value) -> Result<String> {
     for tool_result_content in tool_result.content {
         content = format!("{}\n{}", content, tool_result_content.as_text().unwrap().text)
     }
-    
+
     Ok(content)
 }

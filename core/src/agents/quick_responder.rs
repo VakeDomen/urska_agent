@@ -2,10 +2,10 @@ use std::env;
 
 use reagent_rs::{Agent, AgentBuildError, Notification, StatelessPrebuild, Template};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::Receiver;
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Answerable {
     pub can_respond: bool,
 }
@@ -46,6 +46,7 @@ pub async fn create_quick_response_agent(
         .set_name("Quick")
         .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
         .set_model(env::var("MODEL").expect("MODEL not set"))
+        .set_api_key(env::var("API_KEY").expect("API_KEY not set"))
         .set_template(template)
         .set_response_format_from::<Answerable>()
         .set_system_prompt(system_prompt)

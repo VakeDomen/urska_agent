@@ -210,6 +210,7 @@ Correct new JSON plan output
         .set_response_format_from::<Plan>()
         .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
         .set_model(env::var("MODEL").expect("MODEL not set"))
+        .set_api_key(env::var("API_KEY").expect("API_KEYbtop not set"))
         .set_clear_history_on_invocation(true)
         .build_with_notification()
         .await

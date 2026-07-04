@@ -43,13 +43,16 @@ pub async fn build_function_filter_agent(
     {{question}}",
     );
 
+    let key = env::var("API_KEY").expect("API_KEY not set");
+    println!("key: {}", key);
     StatelessPrebuild::reply_without_tools()
         .set_name("Source Filter")
         // .set_model(env::var("MODEL").expect("MODEL not set"))
-        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
         .import_client_config(urska.export_client_config())
         .import_model_config(urska.export_model_config())
         .import_prompt_config(urska.export_prompt_config().await.unwrap_or_default())
+        .set_base_url(env::var("OLLAMA_ENDPOINT").expect("OLLAMA_ENDPOINT not set"))
+        .set_api_key(env::var("API_KEY").expect("API_KEY not set"))
         .set_system_prompt(system_prompt)
         .set_template(template)
         .set_response_format_from::<Requirement>()

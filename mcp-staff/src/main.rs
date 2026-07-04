@@ -16,7 +16,7 @@ mod util;
 
 const BIND_ADDRESS: &str = "127.0.0.1:8001";
 const MEMORY_MCP_URL: &str = "http://localhost:8002/mcp";
-const SCRAPER_MCP_URL: &str = "http://localhost:8000/sse";
+const SCRAPER_MCP_URL: &str = "http://localhost:7999/sse";
 
 
 #[tokio::main]
@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
 
     let router = axum::Router::new().nest_service("/mcp", service);
     let tcp_listener = tokio::net::TcpListener::bind(BIND_ADDRESS).await?;
-    
+
     println!("- Staff MCP running at {}", BIND_ADDRESS);
     println!("(Press Ctrl+C to terminate immediately)");
 
@@ -127,7 +127,7 @@ impl Service {
         _client: Peer<RoleServer>,
         _meta: Meta,
     ) -> Result<CallToolResult, rmcp::Error> {
-        
+
         let Ok(staff_map) = self.get_or_init_staff_list().await else {
             return Ok(CallToolResult::error(vec![Content::text(
                 "Could not retrieve inital staff list. This is an error."
